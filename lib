@@ -503,27 +503,111 @@ local function TintIcon(icon, color)
 end
 
 --==================================================================
---  GAME ARTWORK RESOLUTION
---  Accepts, in order of preference:
---    Image   = "https://tr.rbxcdn.com/..."   (right-click the game icon
---                                             on Roblox > copy image link)
---    Image   = "rbxassetid://123456"
---    Image   = "123456"                      (bare id, gets the prefix added)
---    PlaceId = 142823291                     (grabbed from the game's URL)
---  PlaceId is the sturdiest of the four: rbxthumb is resolved by Roblox
---  itself, so it can't rot the way a CDN link can when the icon is updated.
+--  IMAGE RESOLUTION
+--
+--  Roblox's engine only accepts its own content URLs. An external link
+--  like https://tr.rbxcdn.com/... is rejected outright — it never loads,
+--  no error, just nothing. So artwork has to arrive as one of:
+--
+--    PlaceId = 142823291
+--        The number in the game's URL: roblox.com/games/142823291/...
+--        Becomes rbxthumb://, which Roblox resolves internally. No network
+--        call, can't be blocked, and it follows the icon when the developer
+--        changes it. This is the one to use.
+--
+--    Image = "rbxassetid://6500905731"   or   Image = "6500905731"
+--        A Roblox asset you or someone else uploaded.
+--
+--    Image = "https://..."
+--        Only works if the executor exposes writefile + getcustomasset.
+--        The file gets downloaded once, cached to disk, and re-registered
+--        as a local asset. Costs an HTTP request per unique URL, so it
+--        resolves in the background and the card renders without it.
 --==================================================================
 
-local function ResolveGameImage(entry)
-    local image = entry.Image
-    if image and image ~= "" then
-        if tonumber(image) then return "rbxassetid://" .. image end
-        return image
+local remoteCache = {}
+
+local function CacheRemoteImage(url)
+    if remoteCache[url] then return remoteCache[url] end
+
+    local httpRequest = (syn and syn.request) or (http and http.request)
+                        or http_request or request
+    if not (httpRequest and writefile and getcustomasset and isfolder and makefolder) then
+        return nil
     end
-    if entry.PlaceId then
-        return ("rbxthumb://type=GameIcon&id=%d&w=256&h=256"):format(entry.PlaceId)
+
+    local ok, asset = pcall(function()
+        if not isfolder("nely_cache") then makefolder("nely_cache") end
+
+        -- rbxcdn hands back WebP by default and Roblox's decoder wants PNG
+        local target = url:gsub("/Webp/", "/Png/")
+
+        local response = httpRequest({ Url = target, Method = "GET" })
+        local body = response and (response.Body or response.body)
+        if not body or #body == 0 then return nil end
+
+        local hash = 5381
+        for i = 1, #url do
+            hash = (hash * 33 + string.byte(url, i)) % 4294967296
+        end
+
+        local path = ("nely_cache/%d.png"):format(hash)
+        writefile(path, body)
+        return getcustomasset(path)
+    end)
+
+    if ok and asset then
+        remoteCache[url] = asset
+        return asset
     end
     return nil
+end
+
+-- Calls back with a usable content string, possibly on a later frame.
+-- Never calls back at all if the source can't be resolved on this executor.
+local function ResolveImageAsync(source, callback)
+    if not source or source == "" then return end
+
+    if tonumber(source) then
+        callback("rbxassetid://" .. source)
+        return
+    end
+    if string.match(source, "^rbx") then
+        callback(source)
+        return
+    end
+
+    task.spawn(function()
+        local cached = CacheRemoteImage(source)
+        if cached then callback(cached) end
+    end)
+end
+
+local function ResolveGameImage(entry, callback)
+    local image = entry.Image
+
+    -- an explicit Roblox content string wins: it costs nothing to load
+    if image and image ~= "" then
+        if tonumber(image) then
+            callback("rbxassetid://" .. image)
+            return
+        end
+        if string.match(image, "^rbx") then
+            callback(image)
+            return
+        end
+    end
+
+    -- PlaceId next, since Roblox resolves it without us touching the network
+    if entry.PlaceId then
+        callback(("rbxthumb://type=GameIcon&id=%d&w=256&h=256"):format(entry.PlaceId))
+        return
+    end
+
+    -- external URL last, because it needs executor support to work at all
+    if image and image ~= "" then
+        ResolveImageAsync(image, callback)
+    end
 end
 
 --==================================================================
@@ -1075,6 +1159,44 @@ function Nely:Dialog(opts)
 end
 
 --==================================================================
+--  BRAND MARK
+--  Draws the hub's monogram, with a custom logo layered over it when one
+--  is supplied. The letter stays underneath on purpose: if the logo is
+--  still downloading, was rejected, or is awaiting Roblox moderation, the
+--  mark reads as intentional instead of collapsing into an empty square.
+--==================================================================
+
+local function BrandMark(parent, title, logo, textSize, radius, zindex)
+    New("TextLabel", {
+        Size                   = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Text                   = string.sub(title, 1, 1):upper(),
+        TextColor3             = Color3.new(1, 1, 1),
+        TextSize               = textSize,
+        Font                   = Enum.Font.GothamBold,
+        ZIndex                 = zindex,
+        Parent                 = parent,
+    })
+
+    if not logo or logo == "" then return end
+
+    local image = New("ImageLabel", {
+        Size                   = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Image                  = "",
+        ImageTransparency      = 1,
+        ScaleType              = Enum.ScaleType.Fit,
+        ZIndex                 = zindex + 1,
+        Parent                 = parent,
+    }, { Corner(radius) })
+
+    ResolveImageAsync(logo, function(content)
+        image.Image = content
+        Tween(image, { ImageTransparency = 0 }, EASE.Smooth)
+    end)
+end
+
+--==================================================================
 --  WINDOW
 --==================================================================
 
@@ -1180,16 +1302,7 @@ function Nely:CreateWindow(opts)
         }), 135),
     })
 
-    New("TextLabel", {
-        Size                   = UDim2.fromScale(1, 1),
-        BackgroundTransparency = 1,
-        Text                   = string.sub(title, 1, 1):upper(),
-        TextColor3             = Color3.new(1, 1, 1),
-        TextSize               = 15,
-        Font                   = Enum.Font.GothamBold,
-        ZIndex                 = 22,
-        Parent                 = logo,
-    })
+    BrandMark(logo, title, opts.Logo, 15, 8, 22)
 
     New("TextLabel", {
         Name                   = "Title",
@@ -1450,16 +1563,7 @@ function Nely:CreateWindow(opts)
     })
     Shadow(orb, 16, 0.5, 25)
 
-    New("TextLabel", {
-        Size                   = UDim2.fromScale(1, 1),
-        BackgroundTransparency = 1,
-        Text                   = string.sub(title, 1, 1):upper(),
-        TextColor3             = Color3.new(1, 1, 1),
-        TextSize               = 20,
-        Font                   = Enum.Font.GothamBold,
-        ZIndex                 = 401,
-        Parent                 = orb,
-    })
+    BrandMark(orb, title, opts.Logo, 20, 25, 401)
 
     -- breathing halo
     local halo = New("Frame", {
@@ -2594,17 +2698,20 @@ function Nely:CreateWindow(opts)
                     Parent                 = art,
                 })
 
-                local artwork = ResolveGameImage(gameData)
-                if artwork then
-                    New("ImageLabel", {
-                        Size                   = UDim2.fromScale(1, 1),
-                        BackgroundTransparency = 1,
-                        Image                  = artwork,
-                        ScaleType              = Enum.ScaleType.Crop,
-                        ZIndex                 = 21,
-                        Parent                 = art,
-                    }, { Corner(9) })
-                end
+                local artwork = New("ImageLabel", {
+                    Size                   = UDim2.fromScale(1, 1),
+                    BackgroundTransparency = 1,
+                    Image                  = "",
+                    ImageTransparency      = 1,
+                    ScaleType              = Enum.ScaleType.Crop,
+                    ZIndex                 = 21,
+                    Parent                 = art,
+                }, { Corner(9) })
+
+                ResolveGameImage(gameData, function(content)
+                    artwork.Image = content
+                    Tween(artwork, { ImageTransparency = 0 }, EASE.Smooth)
+                end)
 
                 -- bottom scrim so the name always reads
                 New("Frame", {
@@ -3425,16 +3532,7 @@ function Nely:CreateWindow(opts)
             }), 135),
         })
 
-        New("TextLabel", {
-            Size                   = UDim2.fromScale(1, 1),
-            BackgroundTransparency = 1,
-            Text                   = string.sub(title, 1, 1):upper(),
-            TextColor3             = Color3.new(1, 1, 1),
-            TextSize               = 20,
-            Font                   = Enum.Font.GothamBold,
-            ZIndex                 = 802,
-            Parent                 = mark,
-        })
+        BrandMark(mark, title, opts.Logo, 20, 11, 802)
 
         New("TextLabel", {
             Size                   = UDim2.new(1, 0, 0, 18),
