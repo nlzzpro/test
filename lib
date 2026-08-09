@@ -279,6 +279,18 @@ local function Ring(parent, size, x, y, thickness)
     return ring
 end
 
+local function Dot(parent, size, x, y)
+    return New("Frame", {
+        Size             = UDim2.fromScale(size, size),
+        Position         = UDim2.fromScale(x, y),
+        AnchorPoint      = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel  = 0,
+        ZIndex           = parent.ZIndex,
+        Parent           = parent,
+    }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+end
+
 local function Box(parent, w, h, x, y, thickness, radius)
     return New("Frame", {
         Size                   = UDim2.fromScale(w, h),
@@ -323,18 +335,33 @@ Icons.gamepad = function(c)
     }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
 end
 
+-- The old gear put six long spokes outside a small ring, which read as an
+-- asterisk rather than a gear. Teeth are now short and straddle the body ring.
 Icons.settings = function(c)
-    Ring(c, 0.36, 0.5, 0.5, 1.6)
-    for i = 0, 5 do
+    Ring(c, 0.38, 0.5, 0.5, 1.6)
+    Ring(c, 0.70, 0.5, 0.5, 1.6)
+    for i = 0, 7 do
         local wrap = New("Frame", {
             Size                   = UDim2.fromScale(1, 1),
             BackgroundTransparency = 1,
-            Rotation               = i * 60,
+            Rotation               = i * 45,
             ZIndex                 = c.ZIndex,
             Parent                 = c,
         })
-        Bar(wrap, 0.11, 0.20, 0.5, 0.13, 0, 2)
+        Bar(wrap, 0.14, 0.15, 0.5, 0.17, 0, 1)
     end
+end
+
+-- Three rails with knobs at staggered positions. Reads as settings instantly
+-- and, unlike a gear, it's made of shapes that survive being drawn from
+-- rectangles at 15px.
+Icons.sliders = function(c)
+    Bar(c, 0.80, 0.085, 0.5, 0.23, 0, 2)
+    Bar(c, 0.80, 0.085, 0.5, 0.50, 0, 2)
+    Bar(c, 0.80, 0.085, 0.5, 0.77, 0, 2)
+    Dot(c, 0.25, 0.66, 0.23)
+    Dot(c, 0.25, 0.34, 0.50)
+    Dot(c, 0.25, 0.71, 0.77)
 end
 
 Icons.search = function(c)
@@ -505,25 +532,116 @@ end
 --==================================================================
 --  IMAGE RESOLUTION
 --
---  Roblox's engine only accepts its own content URLs. An external link
---  like https://tr.rbxcdn.com/... is rejected outright — it never loads,
---  no error, just nothing. So artwork has to arrive as one of:
+--  rbxthumb://type=GameIcon keys off the UNIVERSE id, not the place id.
+--  Feeding it a place id doesn't error — it just returns Roblox's default
+--  placeholder icon, which is exactly what a wrong id looks like.
 --
---    PlaceId = 142823291
---        The number in the game's URL: roblox.com/games/142823291/...
---        Becomes rbxthumb://, which Roblox resolves internally. No network
---        call, can't be blocked, and it follows the icon when the developer
---        changes it. This is the one to use.
+--  There is no in-game way to convert one to the other: GetProductInfo
+--  does not carry a UniverseId field. It takes an API call:
+--      apis.roblox.com/universes/v1/places/{placeId}/universe
 --
---    Image = "rbxassetid://6500905731"   or   Image = "6500905731"
---        A Roblox asset you or someone else uploaded.
+--  So entries can supply either, and the cost differs:
 --
---    Image = "https://..."
---        Only works if the executor exposes writefile + getcustomasset.
---        The file gets downloaded once, cached to disk, and re-registered
---        as a local asset. Costs an HTTP request per unique URL, so it
---        resolves in the background and the card renders without it.
+--    UniverseId = 66654133      instant, zero network, always works
+--    PlaceId    = 142823291     one lookup, then cached to disk forever
+--    Image      = "rbxassetid://6500905731"
+--    Image      = "https://..."  needs writefile + getcustomasset
 --==================================================================
+
+local HttpService = game:GetService("HttpService")
+
+local function HttpGetJson(url)
+    local body
+
+    local httpRequest = (syn and syn.request) or (http and http.request)
+                        or http_request or request
+    if httpRequest then
+        local ok, response = pcall(httpRequest, { Url = url, Method = "GET" })
+        if ok and response then body = response.Body or response.body end
+    end
+
+    if not body then
+        local ok, result = pcall(function() return game:HttpGet(url) end)
+        if ok then body = result end
+    end
+
+    if not body or body == "" then return nil end
+
+    local ok, decoded = pcall(function() return HttpService:JSONDecode(body) end)
+    return ok and decoded or nil
+end
+
+--------------------------------------------------------------------
+--  Universe id lookup: queued, staggered, and cached to disk so the
+--  requests only ever happen once per place across every session.
+--------------------------------------------------------------------
+
+local UNIVERSE_CACHE_FILE = "nely_cache/universes.json"
+
+local universeCache   = {}
+local universeQueue   = {}
+local universeRunning = false
+
+local function LoadUniverseCache()
+    if not (isfile and readfile) then return end
+    pcall(function()
+        if not isfile(UNIVERSE_CACHE_FILE) then return end
+        for placeId, universeId in pairs(HttpService:JSONDecode(readfile(UNIVERSE_CACHE_FILE))) do
+            universeCache[tonumber(placeId) or placeId] = universeId
+        end
+    end)
+end
+
+local function SaveUniverseCache()
+    if not (writefile and isfolder and makefolder) then return end
+    pcall(function()
+        if not isfolder("nely_cache") then makefolder("nely_cache") end
+        local plain = {}
+        for placeId, universeId in pairs(universeCache) do
+            plain[tostring(placeId)] = universeId
+        end
+        writefile(UNIVERSE_CACHE_FILE, HttpService:JSONEncode(plain))
+    end)
+end
+
+LoadUniverseCache()
+
+local function ProcessUniverseQueue()
+    if universeRunning then return end
+    universeRunning = true
+
+    task.spawn(function()
+        local fetched = false
+
+        while #universeQueue > 0 do
+            local job = table.remove(universeQueue, 1)
+            local cached = universeCache[job.placeId]
+
+            if cached then
+                job.callback(cached)
+            else
+                local data = HttpGetJson(
+                    ("https://apis.roblox.com/universes/v1/places/%d/universe"):format(job.placeId))
+                local universeId = data and data.universeId
+
+                if universeId then
+                    universeCache[job.placeId] = universeId
+                    fetched = true
+                    job.callback(universeId)
+                end
+
+                -- stagger, or thirty cards at once trips Roblox's rate limiter
+                -- and most of them come back empty
+                task.wait(0.12)
+            end
+        end
+
+        universeRunning = false
+        if fetched then SaveUniverseCache() end
+    end)
+end
+
+--------------------------------------------------------------------
 
 local remoteCache = {}
 
@@ -563,7 +681,7 @@ local function CacheRemoteImage(url)
     return nil
 end
 
--- Calls back with a usable content string, possibly on a later frame.
+-- Calls back with a usable content string, possibly several frames later.
 -- Never calls back at all if the source can't be resolved on this executor.
 local function ResolveImageAsync(source, callback)
     if not source or source == "" then return end
@@ -584,9 +702,17 @@ local function ResolveImageAsync(source, callback)
 end
 
 local function ResolveGameImage(entry, callback)
-    local image = entry.Image
+    local function Thumb(universeId)
+        callback(("rbxthumb://type=GameIcon&id=%d&w=256&h=256"):format(universeId))
+    end
 
-    -- an explicit Roblox content string wins: it costs nothing to load
+    -- explicit universe id: renders on the spot, nothing to look up
+    if entry.UniverseId then
+        Thumb(entry.UniverseId)
+        return
+    end
+
+    local image = entry.Image
     if image and image ~= "" then
         if tonumber(image) then
             callback("rbxassetid://" .. image)
@@ -598,13 +724,18 @@ local function ResolveGameImage(entry, callback)
         end
     end
 
-    -- PlaceId next, since Roblox resolves it without us touching the network
+    -- place id: needs the universe lookup before rbxthumb will accept it
     if entry.PlaceId then
-        callback(("rbxthumb://type=GameIcon&id=%d&w=256&h=256"):format(entry.PlaceId))
+        local cached = universeCache[entry.PlaceId]
+        if cached then
+            Thumb(cached)
+        else
+            table.insert(universeQueue, { placeId = entry.PlaceId, callback = Thumb })
+            ProcessUniverseQueue()
+        end
         return
     end
 
-    -- external URL last, because it needs executor support to work at all
     if image and image ~= "" then
         ResolveImageAsync(image, callback)
     end
