@@ -428,6 +428,51 @@ Icons.layers = function(c)
     Bar(c, 0.62, 0.10, 0.5, 0.78, 0, 2)
 end
 
+Icons.users = function(c)
+    Ring(c, 0.32, 0.36, 0.28, 1.6)
+    Bar(c, 0.11, 0.24, 0.19, 0.68, -20, 3)
+    Bar(c, 0.11, 0.24, 0.53, 0.68, 20, 3)
+    Bar(c, 0.34, 0.11, 0.36, 0.80, 0, 3)
+    Ring(c, 0.23, 0.76, 0.33, 1.4)
+    Bar(c, 0.10, 0.20, 0.68, 0.70, -14, 3)
+    Bar(c, 0.10, 0.20, 0.86, 0.70, 14, 3)
+end
+
+Icons.copy = function(c)
+    Box(c, 0.50, 0.50, 0.37, 0.37, 1.6, 3)
+    Box(c, 0.50, 0.50, 0.63, 0.63, 1.6, 3)
+end
+
+Icons.clock = function(c)
+    Ring(c, 0.84, 0.5, 0.5, 1.6)
+    Bar(c, 0.09, 0.28, 0.5, 0.38, 0, 2)
+    Bar(c, 0.22, 0.09, 0.60, 0.52, 0, 2)
+end
+
+Icons.signal = function(c)
+    Bar(c, 0.12, 0.24, 0.22, 0.80, 0, 2)
+    Bar(c, 0.12, 0.46, 0.45, 0.69, 0, 2)
+    Bar(c, 0.12, 0.68, 0.68, 0.58, 0, 2)
+end
+
+Icons.pulse = function(c)
+    Bar(c, 0.24, 0.10, 0.20, 0.54, 0, 2)
+    Bar(c, 0.28, 0.10, 0.42, 0.42, -58, 2)
+    Bar(c, 0.28, 0.10, 0.60, 0.62, 58, 2)
+    Bar(c, 0.22, 0.10, 0.83, 0.50, 0, 2)
+end
+
+Icons.chat = function(c)
+    Box(c, 0.80, 0.58, 0.5, 0.42, 1.6, 6)
+    Bar(c, 0.15, 0.15, 0.33, 0.76, 45, 2)
+end
+
+Icons.globe = function(c)
+    Ring(c, 0.86, 0.5, 0.5, 1.6)
+    Ring(c, 0.34, 0.5, 0.5, 1.4)
+    Bar(c, 0.86, 0.09, 0.5, 0.5, 0, 2)
+end
+
 function Icons.Render(name, parent, size, color, zindex)
     local holder = New("Frame", {
         Name                   = "Icon",
@@ -562,6 +607,124 @@ Nely.Root = Root
 -- Acrylic backdrop blur
 local Blur = New("BlurEffect", { Name = "NelyBlur", Size = 0, Parent = Lighting })
 Nely.Blur = Blur
+
+--==================================================================
+--  CUSTOM CURSOR
+--  Dot tracks the pointer exactly. Ring trails behind it with
+--  frame-rate independent smoothing, so it feels weighted rather
+--  than glued on. Only takes over while the pointer is over the UI.
+--==================================================================
+
+local Cursor = { Enabled = true, Active = false, Built = false }
+Nely.Cursor = Cursor
+
+local function BuildCursor(theme)
+    if Cursor.Built then return end
+    Cursor.Built = true
+
+    Cursor.Ring = New("Frame", {
+        Name                   = "CursorRing",
+        Size                   = UDim2.fromOffset(24, 24),
+        AnchorPoint            = Vector2.new(0.5, 0.5),
+        BackgroundTransparency = 1,
+        Visible                = false,
+        ZIndex                 = 990,
+        Parent                 = Root,
+    }, {
+        New("UICorner", { CornerRadius = UDim.new(1, 0) }),
+        New("UIStroke", { Color = theme.Accent, Thickness = 1.5, Transparency = 0.25 }),
+    })
+
+    Cursor.Dot = New("Frame", {
+        Name             = "CursorDot",
+        Size             = UDim2.fromOffset(5, 5),
+        AnchorPoint      = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = theme.AccentSoft,
+        BorderSizePixel  = 0,
+        Visible          = false,
+        ZIndex           = 991,
+        Parent           = Root,
+    }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+
+    Cursor.Targets  = {}
+    Cursor.RingPos  = UserInputService:GetMouseLocation()
+    Cursor.Held     = false
+
+    local function PointerInsideAnyTarget(point)
+        for _, target in ipairs(Cursor.Targets) do
+            if target.Visible then
+                local pos, size = target.AbsolutePosition, target.AbsoluteSize
+                if point.X >= pos.X and point.X <= pos.X + size.X
+               and point.Y >= pos.Y and point.Y <= pos.Y + size.Y then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+
+    local function SetActive(active)
+        if Cursor.Active == active then return end
+        Cursor.Active = active
+        Cursor.Ring.Visible = active
+        Cursor.Dot.Visible  = active
+        UserInputService.MouseIconEnabled = not active
+        if active then
+            Cursor.Ring.Size = UDim2.fromOffset(34, 34)
+            Tween(Cursor.Ring, { Size = UDim2.fromOffset(24, 24) }, EASE.Pop)
+        end
+    end
+
+    local moveConn = RunService.RenderStepped:Connect(function(dt)
+        if not Cursor.Enabled then
+            if Cursor.Active then SetActive(false) end
+            return
+        end
+
+        local inset  = GuiService:GetGuiInset()
+        local mouse  = UserInputService:GetMouseLocation()
+        local point  = Vector2.new(mouse.X, mouse.Y + inset.Y)
+
+        SetActive(PointerInsideAnyTarget(point))
+        if not Cursor.Active then return end
+
+        Cursor.Dot.Position = UDim2.fromOffset(point.X, point.Y)
+
+        -- 1 - e^(-k*dt) keeps the trail identical at 30fps and 240fps
+        local alpha = 1 - math.exp(-16 * dt)
+        Cursor.RingPos = Cursor.RingPos:Lerp(point, alpha)
+        Cursor.Ring.Position = UDim2.fromOffset(Cursor.RingPos.X, Cursor.RingPos.Y)
+    end)
+    table.insert(Nely.Connections, moveConn)
+
+    local downConn = UserInputService.InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+        if not Cursor.Active then return end
+        Cursor.Held = true
+        Tween(Cursor.Ring, { Size = UDim2.fromOffset(16, 16) }, EASE.Pop)
+        Tween(Cursor.Dot, { Size = UDim2.fromOffset(8, 8) }, EASE.Pop)
+    end)
+    table.insert(Nely.Connections, downConn)
+
+    local upConn = UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+        if not Cursor.Held then return end
+        Cursor.Held = false
+        Tween(Cursor.Ring, { Size = UDim2.fromOffset(24, 24) }, EASE.Pop)
+        Tween(Cursor.Dot, { Size = UDim2.fromOffset(5, 5) }, EASE.Pop)
+    end)
+    table.insert(Nely.Connections, upConn)
+end
+
+function Nely:SetCursorEnabled(state)
+    Cursor.Enabled = state
+    if not state and Cursor.Built then
+        Cursor.Ring.Visible = false
+        Cursor.Dot.Visible  = false
+        Cursor.Active       = false
+        UserInputService.MouseIconEnabled = true
+    end
+end
 
 --==================================================================
 --  NOTIFICATIONS
@@ -1210,6 +1373,7 @@ function Nely:CreateWindow(opts)
 
     function Window:Destroy()
         Window.Destroyed = true
+        UserInputService.MouseIconEnabled = true
         Tween(Blur, { Size = 0 }, EASE.Smooth)
         Tween(shell, { Size = UDim2.fromOffset(0, 0), BackgroundTransparency = 1 }, EASE.Smooth)
         Tween(orb, { Size = UDim2.fromOffset(0, 0) }, EASE.Smooth)
@@ -1259,6 +1423,13 @@ function Nely:CreateWindow(opts)
     function Window:Close() MinimizeWindow() end
     function Window:Toggle()
         if Window.Minimized then OpenWindow(true) else MinimizeWindow() end
+    end
+
+    -- custom cursor takes over while the pointer sits on the shell or the orb
+    if opts.CustomCursor ~= false then
+        BuildCursor(theme)
+        table.insert(Cursor.Targets, shell)
+        table.insert(Cursor.Targets, orb)
     end
 
     ----------------------------------------------------------------
@@ -2393,11 +2564,679 @@ function Nely:CreateWindow(opts)
             }
         end
 
+        ------------------------------------------------------------
+        -- Profile card
+        ------------------------------------------------------------
+
+        local function AvatarUrl(userId, size)
+            return ("rbxthumb://type=AvatarHeadShot&id=%d&w=%d&h=%d")
+                :format(userId, size or 150, size or 150)
+        end
+
+        local function ExecutorName()
+            local name
+            pcall(function()
+                if identifyexecutor then name = identifyexecutor() end
+            end)
+            if not name then
+                pcall(function()
+                    if getexecutorname then name = getexecutorname() end
+                end)
+            end
+            return name or "Unknown executor"
+        end
+
+        function Tab:CreateProfileCard()
+            local card = New("Frame", {
+                Size                   = UDim2.new(1, 0, 0, 84),
+                BackgroundColor3       = theme.Surface,
+                BackgroundTransparency = 0.15,
+                BorderSizePixel        = 0,
+                LayoutOrder            = NextOrder(),
+                ClipsDescendants       = true,
+                ZIndex                 = 17,
+                Parent                 = page,
+            }, { Corner(12), Stroke(theme.BorderSoft, 1, 0.4) })
+
+            -- accent wash bleeding in from the left
+            New("Frame", {
+                Size                   = UDim2.fromScale(1, 1),
+                BackgroundColor3       = theme.Accent,
+                BackgroundTransparency = 0.93,
+                BorderSizePixel        = 0,
+                ZIndex                 = 17,
+                Parent                 = card,
+            }, {
+                Corner(12),
+                Gradient(ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, theme.Accent),
+                    ColorSequenceKeypoint.new(0.7, theme.Surface),
+                    ColorSequenceKeypoint.new(1, theme.Surface),
+                }), 20),
+            })
+
+            local avatarRing = New("Frame", {
+                Size             = UDim2.fromOffset(56, 56),
+                Position         = UDim2.new(0, 14, 0.5, 0),
+                AnchorPoint      = Vector2.new(0, 0.5),
+                BackgroundColor3 = theme.Elevated,
+                BorderSizePixel  = 0,
+                ZIndex           = 18,
+                Parent           = card,
+            }, {
+                New("UICorner", { CornerRadius = UDim.new(1, 0) }),
+                New("UIStroke", { Color = theme.Accent, Thickness = 2, Transparency = 0.35 }),
+            })
+
+            New("ImageLabel", {
+                Size                   = UDim2.new(1, -6, 1, -6),
+                Position               = UDim2.fromScale(0.5, 0.5),
+                AnchorPoint            = Vector2.new(0.5, 0.5),
+                BackgroundTransparency = 1,
+                Image                  = AvatarUrl(LocalPlayer.UserId, 150),
+                ZIndex                 = 19,
+                Parent                 = avatarRing,
+            }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+
+            -- online pip
+            New("Frame", {
+                Size             = UDim2.fromOffset(13, 13),
+                Position         = UDim2.new(1, -4, 1, -4),
+                AnchorPoint      = Vector2.new(1, 1),
+                BackgroundColor3 = theme.Success,
+                BorderSizePixel  = 0,
+                ZIndex           = 20,
+                Parent           = avatarRing,
+            }, {
+                New("UICorner", { CornerRadius = UDim.new(1, 0) }),
+                New("UIStroke", { Color = theme.Surface, Thickness = 2.5 }),
+            })
+
+            New("TextLabel", {
+                Size                   = UDim2.new(1, -100, 0, 20),
+                Position               = UDim2.fromOffset(82, 17),
+                BackgroundTransparency = 1,
+                Text                   = "Hello, " .. LocalPlayer.DisplayName,
+                TextColor3             = theme.Text,
+                TextSize               = 17,
+                Font                   = Enum.Font.GothamBold,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                TextTruncate           = Enum.TextTruncate.AtEnd,
+                ZIndex                 = 18,
+                Parent                 = card,
+            })
+
+            New("TextLabel", {
+                Size                   = UDim2.new(1, -100, 0, 15),
+                Position               = UDim2.fromOffset(82, 38),
+                BackgroundTransparency = 1,
+                Text                   = "@" .. LocalPlayer.Name,
+                TextColor3             = theme.TextSub,
+                TextSize               = 12,
+                Font                   = Enum.Font.Gotham,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                TextTruncate           = Enum.TextTruncate.AtEnd,
+                ZIndex                 = 18,
+                Parent                 = card,
+            })
+
+            local execPill = New("Frame", {
+                Size                   = UDim2.fromOffset(0, 19),
+                Position               = UDim2.fromOffset(82, 56),
+                AutomaticSize          = Enum.AutomaticSize.X,
+                BackgroundColor3       = theme.Elevated,
+                BackgroundTransparency = 0.25,
+                BorderSizePixel        = 0,
+                ZIndex                 = 18,
+                Parent                 = card,
+            }, { Corner(6), Pad(0, 0, 7, 8) })
+
+            New("TextLabel", {
+                Size                   = UDim2.fromOffset(0, 19),
+                AutomaticSize          = Enum.AutomaticSize.X,
+                BackgroundTransparency = 1,
+                Text                   = ExecutorName(),
+                TextColor3             = theme.Accent,
+                TextSize               = 10,
+                Font                   = Enum.Font.GothamBold,
+                ZIndex                 = 19,
+                Parent                 = execPill,
+            })
+
+            return { Instance = card, Destroy = function() card:Destroy() end }
+        end
+
+        ------------------------------------------------------------
+        -- Server card
+        ------------------------------------------------------------
+
+        function Tab:CreateServerCard()
+            local statRow = New("Frame", {
+                Size                   = UDim2.new(1, 0, 0, 62),
+                BackgroundTransparency = 1,
+                LayoutOrder            = NextOrder(),
+                ZIndex                 = 17,
+                Parent                 = page,
+            }, {
+                New("UIListLayout", {
+                    Padding       = UDim.new(0, 8),
+                    FillDirection = Enum.FillDirection.Horizontal,
+                    SortOrder     = Enum.SortOrder.LayoutOrder,
+                }),
+            })
+
+            local function Stat(label, iconName, order)
+                local cell = New("Frame", {
+                    Size                   = UDim2.new(1 / 3, -6, 1, 0),
+                    BackgroundColor3       = theme.Surface,
+                    BackgroundTransparency = 0.2,
+                    BorderSizePixel        = 0,
+                    LayoutOrder            = order,
+                    ZIndex                 = 18,
+                    Parent                 = statRow,
+                }, { Corner(11), Stroke(theme.BorderSoft, 1, 0.45) })
+
+                local icon = Icons.Render(iconName, cell, 13, theme.TextDim, 19)
+                icon.Position    = UDim2.fromOffset(12, 12)
+                icon.AnchorPoint = Vector2.new(0, 0)
+
+                New("TextLabel", {
+                    Size                   = UDim2.new(1, -34, 0, 13),
+                    Position               = UDim2.fromOffset(31, 12),
+                    BackgroundTransparency = 1,
+                    Text                   = label,
+                    TextColor3             = theme.TextDim,
+                    TextSize               = 10,
+                    Font                   = Enum.Font.GothamBold,
+                    TextXAlignment         = Enum.TextXAlignment.Left,
+                    ZIndex                 = 19,
+                    Parent                 = cell,
+                })
+
+                local value = New("TextLabel", {
+                    Size                   = UDim2.new(1, -24, 0, 20),
+                    Position               = UDim2.fromOffset(12, 31),
+                    BackgroundTransparency = 1,
+                    Text                   = "—",
+                    TextColor3             = theme.Text,
+                    TextSize               = 16,
+                    Font                   = Enum.Font.GothamBold,
+                    TextXAlignment         = Enum.TextXAlignment.Left,
+                    ZIndex                 = 19,
+                    Parent                 = cell,
+                })
+
+                return value
+            end
+
+            local playersValue = Stat("PLAYERS", "users", 1)
+            local pingValue    = Stat("PING", "signal", 2)
+            local fpsValue     = Stat("FPS", "pulse", 3)
+
+            -- detail rows
+            local detail = New("Frame", {
+                Size                   = UDim2.new(1, 0, 0, 68),
+                BackgroundColor3       = theme.Surface,
+                BackgroundTransparency = 0.2,
+                BorderSizePixel        = 0,
+                LayoutOrder            = NextOrder(),
+                ZIndex                 = 17,
+                Parent                 = page,
+            }, { Corner(11), Stroke(theme.BorderSoft, 1, 0.45), Pad(10, 10, 12, 12), List(6) })
+
+            local function DetailRow(label, order)
+                local holder = New("Frame", {
+                    Size                   = UDim2.new(1, 0, 0, 18),
+                    BackgroundTransparency = 1,
+                    LayoutOrder            = order,
+                    ZIndex                 = 18,
+                    Parent                 = detail,
+                })
+                New("TextLabel", {
+                    Size                   = UDim2.fromOffset(90, 18),
+                    BackgroundTransparency = 1,
+                    Text                   = label,
+                    TextColor3             = theme.TextDim,
+                    TextSize               = 11,
+                    Font                   = Enum.Font.GothamMedium,
+                    TextXAlignment         = Enum.TextXAlignment.Left,
+                    ZIndex                 = 19,
+                    Parent                 = holder,
+                })
+                local value = New("TextLabel", {
+                    Size                   = UDim2.new(1, -96, 1, 0),
+                    Position               = UDim2.fromOffset(94, 0),
+                    BackgroundTransparency = 1,
+                    Text                   = "—",
+                    TextColor3             = theme.TextSub,
+                    TextSize               = 11,
+                    Font                   = Enum.Font.Gotham,
+                    TextXAlignment         = Enum.TextXAlignment.Right,
+                    TextTruncate           = Enum.TextTruncate.AtEnd,
+                    ZIndex                 = 19,
+                    Parent                 = holder,
+                })
+                return holder, value
+            end
+
+            local _,        gameValue   = DetailRow("Game", 1)
+            local jobHolder, jobValue   = DetailRow("Job ID", 2)
+            local _,        uptimeValue = DetailRow("Uptime", 3)
+
+            gameValue.Text = "Loading"
+            task.spawn(function()
+                local ok, info = pcall(function()
+                    return game:GetService("MarketplaceService")
+                        :GetProductInfo(game.PlaceId)
+                end)
+                gameValue.Text = (ok and info and info.Name) or "Place " .. game.PlaceId
+            end)
+
+            jobValue.Text = game.JobId ~= "" and game.JobId or "Studio"
+
+            -- click the Job ID row to copy it
+            local jobCopy = New("TextButton", {
+                Size                   = UDim2.fromScale(1, 1),
+                BackgroundTransparency = 1,
+                AutoButtonColor        = false,
+                Text                   = "",
+                ZIndex                 = 20,
+                Parent                 = jobHolder,
+            })
+            jobCopy.MouseEnter:Connect(function()
+                Tween(jobValue, { TextColor3 = theme.Accent }, EASE.Snap)
+            end)
+            jobCopy.MouseLeave:Connect(function()
+                Tween(jobValue, { TextColor3 = theme.TextSub }, EASE.Snap)
+            end)
+            jobCopy.MouseButton1Click:Connect(function()
+                local copy = setclipboard or toclipboard or (syn and syn.write_clipboard)
+                if copy then
+                    copy(game.JobId)
+                    Nely:Notify({ Title = "Job ID copied", Content = game.JobId, Icon = "copy" })
+                else
+                    Nely:Notify({
+                        Title   = "No clipboard",
+                        Content = "Your executor doesn't expose a clipboard function.",
+                        Icon    = "alert",
+                        Color   = theme.Warning,
+                    })
+                end
+            end)
+
+            -- live stats
+            local frames, elapsed = 0, 0
+            local statsConn = RunService.RenderStepped:Connect(function(dt)
+                frames  = frames + 1
+                elapsed = elapsed + dt
+                if elapsed < 0.5 then return end
+
+                fpsValue.Text = tostring(math.floor(frames / elapsed + 0.5))
+                frames, elapsed = 0, 0
+
+                playersValue.Text = ("%d/%d"):format(#Players:GetPlayers(), Players.MaxPlayers)
+
+                local ok, ping = pcall(function()
+                    return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()
+                end)
+                pingValue.Text = ok and (math.floor(ping + 0.5) .. " ms") or "—"
+
+                local total   = math.floor(workspace.DistributedGameTime)
+                uptimeValue.Text = ("%02d:%02d:%02d")
+                    :format(total / 3600, (total % 3600) / 60, total % 60)
+            end)
+            table.insert(Nely.Connections, statsConn)
+
+            return {
+                Destroy = function()
+                    statsConn:Disconnect()
+                    statRow:Destroy()
+                    detail:Destroy()
+                end,
+            }
+        end
+
+        ------------------------------------------------------------
+        -- Friends card
+        ------------------------------------------------------------
+
+        function Tab:CreateFriendsCard()
+            local card = New("Frame", {
+                Size                   = UDim2.new(1, 0, 0, 0),
+                AutomaticSize          = Enum.AutomaticSize.Y,
+                BackgroundColor3       = theme.Surface,
+                BackgroundTransparency = 0.2,
+                BorderSizePixel        = 0,
+                LayoutOrder            = NextOrder(),
+                ZIndex                 = 17,
+                Parent                 = page,
+            }, { Corner(11), Stroke(theme.BorderSoft, 1, 0.45), Pad(12, 12, 12, 12), List(9) })
+
+            local header = New("Frame", {
+                Size                   = UDim2.new(1, 0, 0, 18),
+                BackgroundTransparency = 1,
+                LayoutOrder            = 1,
+                ZIndex                 = 18,
+                Parent                 = card,
+            })
+
+            local headIcon = Icons.Render("users", header, 14, theme.Accent, 19)
+            headIcon.Position    = UDim2.new(0, 0, 0.5, 0)
+            headIcon.AnchorPoint = Vector2.new(0, 0.5)
+
+            local headLabel = New("TextLabel", {
+                Size                   = UDim2.new(1, -24, 1, 0),
+                Position               = UDim2.fromOffset(21, 0),
+                BackgroundTransparency = 1,
+                Text                   = "Checking friends",
+                TextColor3             = theme.Text,
+                TextSize               = 13,
+                Font                   = Enum.Font.GothamMedium,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                ZIndex                 = 19,
+                Parent                 = header,
+            })
+
+            -- avatars of friends who are in this server
+            local avatarStrip = New("Frame", {
+                Size                   = UDim2.new(1, 0, 0, 34),
+                BackgroundTransparency = 1,
+                LayoutOrder            = 2,
+                Visible                = false,
+                ZIndex                 = 18,
+                Parent                 = card,
+            }, {
+                New("UIListLayout", {
+                    Padding       = UDim.new(0, 6),
+                    FillDirection = Enum.FillDirection.Horizontal,
+                    SortOrder     = Enum.SortOrder.LayoutOrder,
+                }),
+            })
+
+            local summary = New("TextLabel", {
+                Size                   = UDim2.new(1, 0, 0, 15),
+                BackgroundTransparency = 1,
+                Text                   = "Loading friend list",
+                TextColor3             = theme.TextDim,
+                TextSize               = 11,
+                Font                   = Enum.Font.Gotham,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                LayoutOrder            = 3,
+                ZIndex                 = 18,
+                Parent                 = card,
+            })
+
+            -- Every friend API here yields and is rate limited, so this runs
+            -- off the main flow and fills the card in as answers land.
+            task.spawn(function()
+                local inServer = {}
+                for _, player in ipairs(Players:GetPlayers()) do
+                    if player ~= LocalPlayer then
+                        local ok, isFriend = pcall(function()
+                            return LocalPlayer:IsFriendsWith(player.UserId)
+                        end)
+                        if ok and isFriend then
+                            table.insert(inServer, player)
+                        end
+                    end
+                end
+
+                if #inServer > 0 then
+                    headLabel.Text     = ("%d friend%s in this server")
+                        :format(#inServer, #inServer == 1 and "" or "s")
+                    avatarStrip.Visible = true
+
+                    for index, friend in ipairs(inServer) do
+                        if index > 8 then break end
+                        local chip = New("Frame", {
+                            Size             = UDim2.fromOffset(34, 34),
+                            BackgroundColor3 = theme.Elevated,
+                            BorderSizePixel  = 0,
+                            LayoutOrder      = index,
+                            ZIndex           = 19,
+                            Parent           = avatarStrip,
+                        }, {
+                            New("UICorner", { CornerRadius = UDim.new(1, 0) }),
+                            New("UIStroke", { Color = theme.Success, Thickness = 1.5, Transparency = 0.4 }),
+                        })
+
+                        New("ImageLabel", {
+                            Size                   = UDim2.new(1, -4, 1, -4),
+                            Position               = UDim2.fromScale(0.5, 0.5),
+                            AnchorPoint            = Vector2.new(0.5, 0.5),
+                            BackgroundTransparency = 1,
+                            Image                  = AvatarUrl(friend.UserId, 100),
+                            ZIndex                 = 20,
+                            Parent                 = chip,
+                        }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+
+                        local hover = New("TextButton", {
+                            Size                   = UDim2.fromScale(1, 1),
+                            BackgroundTransparency = 1,
+                            AutoButtonColor        = false,
+                            Text                   = "",
+                            ZIndex                 = 21,
+                            Parent                 = chip,
+                        })
+                        hover.MouseButton1Click:Connect(function()
+                            Nely:Notify({
+                                Title   = friend.DisplayName,
+                                Content = "@" .. friend.Name .. " is in this server.",
+                                Icon    = "users",
+                                Color   = theme.Success,
+                            })
+                        end)
+                    end
+                else
+                    headLabel.Text = "No friends in this server"
+                end
+
+                local onlineCount = 0
+                local ok, online = pcall(function()
+                    return LocalPlayer:GetFriendsOnline(200)
+                end)
+                if ok and type(online) == "table" then
+                    onlineCount = #online
+                end
+
+                local totalCount = 0
+                pcall(function()
+                    local pages = Players:GetFriendsAsync(LocalPlayer.UserId)
+                    local guard = 0
+                    repeat
+                        totalCount = totalCount + #pages:GetCurrentPage()
+                        guard = guard + 1
+                        if pages.IsFinished or guard >= 12 then break end
+                        pages:AdvanceToNextPageAsync()
+                    until false
+                end)
+
+                summary.Text = ("%d online  ·  %d total")
+                    :format(onlineCount, math.max(totalCount, onlineCount))
+            end)
+
+            return { Instance = card, Destroy = function() card:Destroy() end }
+        end
+
+        ------------------------------------------------------------
+        -- Discord card
+        ------------------------------------------------------------
+
+        function Tab:CreateDiscordCard(cfg)
+            cfg = cfg or {}
+            local invite = cfg.Invite or "nely"
+            local pretty = "discord.gg/" .. invite
+            local full   = "https://discord.gg/" .. invite
+
+            local card = New("TextButton", {
+                Size                   = UDim2.new(1, 0, 0, 58),
+                BackgroundColor3       = theme.Surface,
+                BackgroundTransparency = 0.15,
+                AutoButtonColor        = false,
+                Text                   = "",
+                LayoutOrder            = NextOrder(),
+                ClipsDescendants       = true,
+                ZIndex                 = 17,
+                Parent                 = page,
+            }, { Corner(12), Stroke(theme.BorderSoft, 1, 0.4) })
+
+            local wash = New("Frame", {
+                Size                   = UDim2.fromScale(1, 1),
+                BackgroundColor3       = theme.Accent,
+                BackgroundTransparency = 0.94,
+                BorderSizePixel        = 0,
+                ZIndex                 = 17,
+                Parent                 = card,
+            }, {
+                Corner(12),
+                Gradient(ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, theme.Accent),
+                    ColorSequenceKeypoint.new(1, theme.Surface),
+                }), 15),
+            })
+
+            local badge = New("Frame", {
+                Size                   = UDim2.fromOffset(34, 34),
+                Position               = UDim2.new(0, 12, 0.5, 0),
+                AnchorPoint            = Vector2.new(0, 0.5),
+                BackgroundColor3       = theme.Accent,
+                BackgroundTransparency = 0.82,
+                BorderSizePixel        = 0,
+                ZIndex                 = 18,
+                Parent                 = card,
+            }, { Corner(10) })
+
+            local badgeIcon = Icons.Render("chat", badge, 17, theme.Accent, 19)
+            badgeIcon.Position    = UDim2.fromScale(0.5, 0.5)
+            badgeIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+
+            New("TextLabel", {
+                Size                   = UDim2.new(1, -130, 0, 16),
+                Position               = UDim2.fromOffset(56, 13),
+                BackgroundTransparency = 1,
+                Text                   = "Join the Discord",
+                TextColor3             = theme.Text,
+                TextSize               = 13,
+                Font                   = Enum.Font.GothamBold,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                ZIndex                 = 18,
+                Parent                 = card,
+            })
+
+            New("TextLabel", {
+                Size                   = UDim2.new(1, -130, 0, 14),
+                Position               = UDim2.fromOffset(56, 30),
+                BackgroundTransparency = 1,
+                Text                   = pretty,
+                TextColor3             = theme.TextSub,
+                TextSize               = 11,
+                Font                   = Enum.Font.Gotham,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                ZIndex                 = 18,
+                Parent                 = card,
+            })
+
+            local copyPill = New("Frame", {
+                Size                   = UDim2.fromOffset(72, 28),
+                Position               = UDim2.new(1, -12, 0.5, 0),
+                AnchorPoint            = Vector2.new(1, 0.5),
+                BackgroundColor3       = theme.Accent,
+                BackgroundTransparency = 0.15,
+                BorderSizePixel        = 0,
+                ZIndex                 = 18,
+                Parent                 = card,
+            }, { Corner(8) })
+
+            local pillIcon = Icons.Render("copy", copyPill, 12, Color3.new(1, 1, 1), 19)
+            pillIcon.Position    = UDim2.new(0, 10, 0.5, 0)
+            pillIcon.AnchorPoint = Vector2.new(0, 0.5)
+
+            local pillLabel = New("TextLabel", {
+                Size                   = UDim2.new(1, -26, 1, 0),
+                Position               = UDim2.fromOffset(24, 0),
+                BackgroundTransparency = 1,
+                Text                   = "Copy",
+                TextColor3             = Color3.new(1, 1, 1),
+                TextSize               = 12,
+                Font                   = Enum.Font.GothamBold,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                ZIndex                 = 19,
+                Parent                 = copyPill,
+            })
+
+            local cardStroke = card:FindFirstChildOfClass("UIStroke")
+
+            card.MouseEnter:Connect(function()
+                Tween(card, { BackgroundTransparency = 0 }, EASE.Snap)
+                Tween(wash, { BackgroundTransparency = 0.88 }, EASE.Snap)
+                Tween(cardStroke, { Color = theme.Accent, Transparency = 0.25 }, EASE.Snap)
+                Tween(copyPill, { BackgroundTransparency = 0 }, EASE.Snap)
+            end)
+            card.MouseLeave:Connect(function()
+                Tween(card, { BackgroundTransparency = 0.15 }, EASE.Snap)
+                Tween(wash, { BackgroundTransparency = 0.94 }, EASE.Snap)
+                Tween(cardStroke, { Color = theme.BorderSoft, Transparency = 0.4 }, EASE.Snap)
+                Tween(copyPill, { BackgroundTransparency = 0.15 }, EASE.Snap)
+            end)
+
+            card.MouseButton1Click:Connect(function()
+                Ripple(card, 22)
+                local copy = setclipboard or toclipboard or (syn and syn.write_clipboard)
+                if copy then
+                    copy(full)
+                    pillLabel.Text = "Copied"
+                    Nely:Notify({
+                        Title   = "Invite copied",
+                        Content = pretty .. " is on your clipboard.",
+                        Icon    = "check",
+                        Color   = theme.Success,
+                    })
+                    task.delay(2, function() pillLabel.Text = "Copy" end)
+                else
+                    Nely:Notify({
+                        Title   = "No clipboard",
+                        Content = "Join manually at " .. pretty,
+                        Icon    = "alert",
+                        Color   = theme.Warning,
+                    })
+                end
+            end)
+
+            return { Instance = card, Destroy = function() card:Destroy() end }
+        end
+
         if #Window.Tabs == 1 then
             task.defer(Activate)
         end
 
         return Tab
+    end
+
+    ----------------------------------------------------------------
+    -- Prebuilt home tab
+    ----------------------------------------------------------------
+
+    function Window:CreateHomeTab(homeOpts)
+        homeOpts = homeOpts or {}
+        local Home = Window:CreateTab({
+            Name = homeOpts.Name or "Home",
+            Icon = homeOpts.Icon or "home",
+        })
+
+        Home:CreateProfileCard()
+
+        Home:CreateSection("Server")
+        Home:CreateServerCard()
+
+        Home:CreateSection("Friends")
+        Home:CreateFriendsCard()
+
+        if homeOpts.DiscordInvite then
+            Home:CreateSection("Community")
+            Home:CreateDiscordCard({ Invite = homeOpts.DiscordInvite })
+        end
+
+        return Home
     end
 
     ----------------------------------------------------------------
