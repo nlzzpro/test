@@ -114,7 +114,7 @@ local EASE = {
     Instant = TweenInfo.new(0.10, Enum.EasingStyle.Quad,  Enum.EasingDirection.Out),
     Snap    = TweenInfo.new(0.16, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
     Smooth  = TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
-    Glide   = TweenInfo.new(0.42, Enum.EasingStyle.Expo,  Enum.EasingDirection.Out),
+    Glide   = TweenInfo.new(0.42, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
     Pop     = TweenInfo.new(0.38, Enum.EasingStyle.Back,  Enum.EasingDirection.Out),
 }
 
@@ -729,7 +729,8 @@ function Nely:Dialog(opts)
         Pad(20, 18, 20, 20),
         List(0),
     })
-    Shadow(card, 26, 0.6, 16)
+    -- no Shadow() here: this card runs a UIListLayout, which would treat the
+    -- shadow holder as a list item and push every child down past it.
 
     local iconWrap = New("Frame", {
         Size                   = UDim2.fromOffset(42, 42),
@@ -809,7 +810,7 @@ function Nely:Dialog(opts)
         local isPrimary = spec.Primary == true
         local base      = isPrimary and theme.Accent or theme.Elevated
         local btn = New("TextButton", {
-            Size             = UDim2.new(width, index < #buttons and -4 or -4, 1, 0),
+            Size             = UDim2.new(width, -4, 1, 0),
             BackgroundColor3 = base,
             AutoButtonColor  = false,
             Text             = "",
@@ -886,7 +887,9 @@ function Nely:CreateWindow(opts)
         BackgroundColor3 = theme.Backdrop,
         BackgroundTransparency = opts.Transparent == false and 0 or 0.04,
         BorderSizePixel  = 0,
-        ClipsDescendants = true,
+        -- must stay false: the shadow lives inside the shell and would be clipped away.
+        -- the content frame does its own clipping for page transitions.
+        ClipsDescendants = false,
         ZIndex           = 10,
         Parent           = Root,
     }, {
