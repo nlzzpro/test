@@ -20,7 +20,6 @@ local UserInputService  = game:GetService("UserInputService")
 local RunService        = game:GetService("RunService")
 local Players           = game:GetService("Players")
 local Lighting          = game:GetService("Lighting")
-local GuiService        = game:GetService("GuiService")
 local CoreGui           = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
@@ -504,16 +503,48 @@ local function TintIcon(icon, color)
 end
 
 --==================================================================
+--  GAME ARTWORK RESOLUTION
+--  Accepts, in order of preference:
+--    Image   = "https://tr.rbxcdn.com/..."   (right-click the game icon
+--                                             on Roblox > copy image link)
+--    Image   = "rbxassetid://123456"
+--    Image   = "123456"                      (bare id, gets the prefix added)
+--    PlaceId = 142823291                     (grabbed from the game's URL)
+--  PlaceId is the sturdiest of the four: rbxthumb is resolved by Roblox
+--  itself, so it can't rot the way a CDN link can when the icon is updated.
+--==================================================================
+
+local function ResolveGameImage(entry)
+    local image = entry.Image
+    if image and image ~= "" then
+        if tonumber(image) then return "rbxassetid://" .. image end
+        return image
+    end
+    if entry.PlaceId then
+        return ("rbxthumb://type=GameIcon&id=%d&w=256&h=256"):format(entry.PlaceId)
+    end
+    return nil
+end
+
+--==================================================================
 --  INTERACTION HELPERS
 --==================================================================
 
+-- Root runs IgnoreGuiInset = true, which means its coordinate space already
+-- lines up with what GetMouseLocation returns. Adding GetGuiInset() on top
+-- shifts everything down by the height of the Roblox topbar, so the drawn
+-- cursor sits ~36px below the real pointer and every click lands above its
+-- target. One helper, used everywhere, so this can't drift apart again.
+local function GetPointer()
+    return UserInputService:GetMouseLocation()
+end
+
 local function Ripple(button, zindex)
-    local pos  = UserInputService:GetMouseLocation()
+    local pos  = GetPointer()
     local abs  = button.AbsolutePosition
     local size = button.AbsoluteSize
-    local inset = GuiService:GetGuiInset()
     local rx = math.clamp((pos.X - abs.X) / math.max(size.X, 1), 0, 1)
-    local ry = math.clamp((pos.Y + inset.Y - abs.Y) / math.max(size.Y, 1), 0, 1)
+    local ry = math.clamp((pos.Y - abs.Y) / math.max(size.Y, 1), 0, 1)
 
     local ripple = New("Frame", {
         Size                   = UDim2.fromOffset(0, 0),
@@ -647,7 +678,7 @@ local function BuildCursor(theme)
     }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
 
     Cursor.Targets  = {}
-    Cursor.RingPos  = UserInputService:GetMouseLocation()
+    Cursor.RingPos  = GetPointer()
     Cursor.Held     = false
 
     local function PointerInsideAnyTarget(point)
@@ -681,9 +712,7 @@ local function BuildCursor(theme)
             return
         end
 
-        local inset  = GuiService:GetGuiInset()
-        local mouse  = UserInputService:GetMouseLocation()
-        local point  = Vector2.new(mouse.X, mouse.Y + inset.Y)
+        local point = GetPointer()
 
         SetActive(PointerInsideAnyTarget(point))
         if not Cursor.Active then return end
@@ -732,15 +761,15 @@ end
 
 local NotifyHolder = New("Frame", {
     Name                   = "Notifications",
-    Size                   = UDim2.new(0, 300, 1, -40),
-    Position               = UDim2.new(1, -20, 1, -20),
+    Size                   = UDim2.new(0, 248, 1, -40),
+    Position               = UDim2.new(1, -16, 1, -16),
     AnchorPoint            = Vector2.new(1, 1),
     BackgroundTransparency = 1,
     ZIndex                 = 500,
     Parent                 = Root,
 }, {
     New("UIListLayout", {
-        Padding             = UDim.new(0, 10),
+        Padding             = UDim.new(0, 8),
         VerticalAlignment   = Enum.VerticalAlignment.Bottom,
         HorizontalAlignment = Enum.HorizontalAlignment.Right,
         SortOrder           = Enum.SortOrder.LayoutOrder,
@@ -760,73 +789,107 @@ function Nely:Notify(opts)
 
     notifyOrder = notifyOrder + 1
 
+    -- NotifyHolder runs a UIListLayout, which owns Position outright. Animating
+    -- the card's Position directly does nothing. So the layout gets a clipping
+    -- slot, and the card slides inside it.
+    local slot = New("Frame", {
+        Name                   = "Slot",
+        Size                   = UDim2.new(1, 0, 0, 0),
+        AutomaticSize          = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        ClipsDescendants       = true,
+        LayoutOrder            = notifyOrder,
+        ZIndex                 = 501,
+        Parent                 = NotifyHolder,
+    })
+
     local card = New("Frame", {
         Name                   = "Notification",
         Size                   = UDim2.new(1, 0, 0, 0),
         AutomaticSize          = Enum.AutomaticSize.Y,
         BackgroundColor3       = theme.SurfaceAlt,
-        BackgroundTransparency = 0.06,
+        BackgroundTransparency = 0.04,
         BorderSizePixel        = 0,
-        LayoutOrder            = notifyOrder,
         ZIndex                 = 502,
-        Parent                 = NotifyHolder,
+        Parent                 = slot,
     }, {
-        Corner(12),
-        Stroke(theme.Border, 1, 0.4),
-        Pad(12, 12, 12, 12),
+        Corner(10),
+        Stroke(theme.Border, 1, 0.45),
+        Pad(9, 9, 10, 10),
+        List(7),
     })
-    Shadow(card, 14, 0.4, 12)
+
+    local row = New("Frame", {
+        Size                   = UDim2.new(1, 0, 0, 0),
+        AutomaticSize          = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        LayoutOrder            = 1,
+        ZIndex                 = 503,
+        Parent                 = card,
+    })
 
     local iconWrap = New("Frame", {
-        Size             = UDim2.fromOffset(30, 30),
-        BackgroundColor3 = tint,
-        BackgroundTransparency = 0.85,
-        BorderSizePixel  = 0,
-        ZIndex           = 503,
-        Parent           = card,
-    }, { Corner(9) })
-    local icon = Icons.Render(iconName, iconWrap, 16, tint, 504)
+        Size                   = UDim2.fromOffset(20, 20),
+        BackgroundColor3       = tint,
+        BackgroundTransparency = 0.84,
+        BorderSizePixel        = 0,
+        ZIndex                 = 503,
+        Parent                 = row,
+    }, { Corner(6) })
+    local icon = Icons.Render(iconName, iconWrap, 11, tint, 504)
     icon.Position    = UDim2.fromScale(0.5, 0.5)
     icon.AnchorPoint = Vector2.new(0.5, 0.5)
 
+    local textCol = New("Frame", {
+        Size                   = UDim2.new(1, -28, 0, 0),
+        Position               = UDim2.fromOffset(28, 0),
+        AutomaticSize          = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        ZIndex                 = 503,
+        Parent                 = row,
+    }, { List(2) })
+
     New("TextLabel", {
-        Size                   = UDim2.new(1, -42, 0, 17),
-        Position               = UDim2.fromOffset(40, 0),
+        Size                   = UDim2.new(1, 0, 0, 14),
         BackgroundTransparency = 1,
         Text                   = title,
         TextColor3             = theme.Text,
-        TextSize               = 14,
+        TextSize               = 12,
         Font                   = Enum.Font.GothamBold,
         TextXAlignment         = Enum.TextXAlignment.Left,
-        ZIndex                 = 503,
-        Parent                 = card,
+        TextTruncate           = Enum.TextTruncate.AtEnd,
+        LayoutOrder            = 1,
+        ZIndex                 = 504,
+        Parent                 = textCol,
     })
 
-    local body = New("TextLabel", {
-        Size                   = UDim2.new(1, -42, 0, 0),
-        Position               = UDim2.fromOffset(40, 19),
-        AutomaticSize          = Enum.AutomaticSize.Y,
-        BackgroundTransparency = 1,
-        Text                   = content,
-        TextColor3             = theme.TextSub,
-        TextSize               = 12,
-        Font                   = Enum.Font.Gotham,
-        TextXAlignment         = Enum.TextXAlignment.Left,
-        TextYAlignment         = Enum.TextYAlignment.Top,
-        TextWrapped            = true,
-        ZIndex                 = 503,
-        Parent                 = card,
-    })
+    if content ~= "" then
+        New("TextLabel", {
+            Size                   = UDim2.new(1, 0, 0, 0),
+            AutomaticSize          = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1,
+            Text                   = content,
+            TextColor3             = theme.TextSub,
+            TextSize               = 11,
+            Font                   = Enum.Font.Gotham,
+            TextXAlignment         = Enum.TextXAlignment.Left,
+            TextYAlignment         = Enum.TextYAlignment.Top,
+            TextWrapped            = true,
+            LayoutOrder            = 2,
+            ZIndex                 = 504,
+            Parent                 = textCol,
+        })
+    end
 
-    -- progress bar
     local track = New("Frame", {
-        Size             = UDim2.new(1, -24, 0, 2),
-        Position         = UDim2.new(0, 12, 1, -6),
+        Size             = UDim2.new(1, 0, 0, 2),
         BackgroundColor3 = theme.Border,
         BorderSizePixel  = 0,
+        LayoutOrder      = 2,
         ZIndex           = 503,
         Parent           = card,
     }, { Corner(2) })
+
     local fill = New("Frame", {
         Size             = UDim2.fromScale(1, 1),
         BackgroundColor3 = tint,
@@ -835,21 +898,17 @@ function Nely:Notify(opts)
         Parent           = track,
     }, { Corner(2) })
 
-    card.Position = UDim2.fromOffset(340, 0)
-    Tween(card, { Position = UDim2.fromOffset(0, 0) }, EASE.Pop)
+    card.Position = UDim2.fromScale(1.1, 0)
+    Tween(card, { Position = UDim2.fromScale(0, 0) }, EASE.Pop)
 
     TweenService:Create(fill, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
         Size = UDim2.fromScale(0, 1),
     }):Play()
 
     task.delay(duration, function()
-        if not card.Parent then return end
-        Tween(card, {
-            Position               = UDim2.fromOffset(340, 0),
-            BackgroundTransparency = 1,
-        }, EASE.Smooth)
-        Tween(body, { TextTransparency = 1 }, EASE.Smooth)
-        task.delay(0.32, function() card:Destroy() end)
+        if not slot.Parent then return end
+        Tween(card, { Position = UDim2.fromScale(1.1, 0) }, EASE.Smooth)
+        task.delay(0.32, function() slot:Destroy() end)
     end)
 
     return card
@@ -1035,8 +1094,12 @@ function Nely:CreateWindow(opts)
         ActiveTab   = nil,
         Minimized   = false,
         Destroyed   = false,
+        CurrentSize = winSize,
         _tabOrder   = 0,
     }
+
+    local minSize = opts.MinSize or Vector2.new(560, 400)
+    local maxSize = opts.MaxSize or Vector2.new(960, 660)
 
     ----------------------------------------------------------------
     -- Shell
@@ -1281,6 +1344,88 @@ function Nely:CreateWindow(opts)
     })
 
     ----------------------------------------------------------------
+    -- Resize grip
+    ----------------------------------------------------------------
+
+    local grip = New("TextButton", {
+        Name                   = "ResizeGrip",
+        Size                   = UDim2.fromOffset(20, 20),
+        Position               = UDim2.new(1, -2, 1, -2),
+        AnchorPoint            = Vector2.new(1, 1),
+        BackgroundTransparency = 1,
+        AutoButtonColor        = false,
+        Text                   = "",
+        ZIndex                 = 40,
+        Parent                 = shell,
+    })
+
+    local gripTicks = {}
+    for i = 1, 3 do
+        gripTicks[i] = New("Frame", {
+            Size             = UDim2.fromOffset(3 + i * 3, 2),
+            Position         = UDim2.new(1, -4, 1, -4 - (i - 1) * 4),
+            AnchorPoint      = Vector2.new(1, 1),
+            Rotation         = -45,
+            BackgroundColor3 = theme.TextDim,
+            BorderSizePixel  = 0,
+            ZIndex           = 41,
+            Parent           = grip,
+        }, { Corner(1) })
+    end
+
+    grip.MouseEnter:Connect(function()
+        for _, tick in ipairs(gripTicks) do
+            Tween(tick, { BackgroundColor3 = theme.Accent }, EASE.Snap)
+        end
+    end)
+    grip.MouseLeave:Connect(function()
+        for _, tick in ipairs(gripTicks) do
+            Tween(tick, { BackgroundColor3 = theme.TextDim }, EASE.Snap)
+        end
+    end)
+
+    local resizing, resizeStart, sizeStart, posStart = false, nil, nil, nil
+
+    grip.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            resizing    = true
+            resizeStart = input.Position
+            sizeStart   = shell.AbsoluteSize
+            posStart    = shell.Position
+        end
+    end)
+
+    local resizeMove = UserInputService.InputChanged:Connect(function(input)
+        if not resizing then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement
+       and input.UserInputType ~= Enum.UserInputType.Touch then return end
+
+        local delta  = input.Position - resizeStart
+        local width  = math.clamp(sizeStart.X + delta.X, minSize.X, maxSize.X)
+        local height = math.clamp(sizeStart.Y + delta.Y, minSize.Y, maxSize.Y)
+        local grown  = Vector2.new(width - sizeStart.X, height - sizeStart.Y)
+
+        shell.Size = UDim2.fromOffset(width, height)
+        -- the shell is centre-anchored, so growth pushes out in both directions.
+        -- shifting by half the growth keeps the grabbed corner under the pointer.
+        shell.Position = UDim2.new(
+            posStart.X.Scale, posStart.X.Offset + grown.X / 2,
+            posStart.Y.Scale, posStart.Y.Offset + grown.Y / 2
+        )
+        Window.CurrentSize = shell.Size
+    end)
+    table.insert(Nely.Connections, resizeMove)
+
+    local resizeEnd = UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            resizing = false
+        end
+    end)
+    table.insert(Nely.Connections, resizeEnd)
+
+    ----------------------------------------------------------------
     -- Minimize orb
     ----------------------------------------------------------------
 
@@ -1349,17 +1494,19 @@ function Nely:CreateWindow(opts)
         orb.Visible = false
         Tween(Blur, { Size = 14 }, EASE.Glide)
         if animate ~= false then
-            shell.Size = UDim2.fromOffset(winSize.X.Offset * 0.9, winSize.Y.Offset * 0.9)
+            local target = Window.CurrentSize
+            shell.Size = UDim2.fromOffset(target.X.Offset * 0.9, target.Y.Offset * 0.9)
             shell.BackgroundTransparency = 1
-            Tween(shell, { Size = winSize, BackgroundTransparency = 0.04 }, EASE.Pop)
+            Tween(shell, { Size = target, BackgroundTransparency = 0.04 }, EASE.Pop)
         end
     end
 
     local function MinimizeWindow()
         Window.Minimized = true
         Tween(Blur, { Size = 0 }, EASE.Smooth)
+        local current = Window.CurrentSize
         Tween(shell, {
-            Size                   = UDim2.fromOffset(winSize.X.Offset * 0.86, winSize.Y.Offset * 0.86),
+            Size                   = UDim2.fromOffset(current.X.Offset * 0.86, current.Y.Offset * 0.86),
             BackgroundTransparency = 1,
         }, EASE.Smooth)
         task.delay(0.26, function()
@@ -1925,7 +2072,7 @@ function Nely:CreateWindow(opts)
             })
 
             local function PointerRatio()
-                local mouse = UserInputService:GetMouseLocation()
+                local mouse = GetPointer()
                 return (mouse.X - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1)
             end
 
@@ -2431,28 +2578,32 @@ function Nely:CreateWindow(opts)
                     }), 140),
                 })
 
-                if gameData.Image and gameData.Image ~= "" then
+                -- The letter tile always sits underneath. If the image link is
+                -- missing, broken, or rejected by the executor, the ImageLabel
+                -- just renders nothing and the letter shows through — so a bad
+                -- link degrades into something deliberate rather than a hole.
+                New("TextLabel", {
+                    Size                   = UDim2.fromScale(1, 1),
+                    BackgroundTransparency = 1,
+                    Text                   = string.upper(string.sub(gameData.Name, 1, 1)),
+                    TextColor3             = Color3.new(1, 1, 1),
+                    TextTransparency       = 0.25,
+                    TextSize               = 40,
+                    Font                   = Enum.Font.GothamBold,
+                    ZIndex                 = 20,
+                    Parent                 = art,
+                })
+
+                local artwork = ResolveGameImage(gameData)
+                if artwork then
                     New("ImageLabel", {
                         Size                   = UDim2.fromScale(1, 1),
                         BackgroundTransparency = 1,
-                        Image                  = gameData.Image,
+                        Image                  = artwork,
                         ScaleType              = Enum.ScaleType.Crop,
-                        ZIndex                 = 20,
+                        ZIndex                 = 21,
                         Parent                 = art,
                     }, { Corner(9) })
-                else
-                    -- letter-avatar fallback so missing art still looks deliberate
-                    New("TextLabel", {
-                        Size                   = UDim2.fromScale(1, 1),
-                        BackgroundTransparency = 1,
-                        Text                   = string.upper(string.sub(gameData.Name, 1, 1)),
-                        TextColor3             = Color3.new(1, 1, 1),
-                        TextTransparency       = 0.25,
-                        TextSize               = 40,
-                        Font                   = Enum.Font.GothamBold,
-                        ZIndex                 = 20,
-                        Parent                 = art,
-                    })
                 end
 
                 -- bottom scrim so the name always reads
@@ -2461,7 +2612,7 @@ function Nely:CreateWindow(opts)
                     Position               = UDim2.new(0, 0, 1, -40),
                     BackgroundColor3       = theme.Backdrop,
                     BorderSizePixel        = 0,
-                    ZIndex                 = 21,
+                    ZIndex                 = 22,
                     Parent                 = art,
                 }, {
                     Gradient(
@@ -3342,9 +3493,69 @@ end
 --==================================================================
 
 function Nely:SetTheme(name)
-    local theme = Nely.Themes[name]
-    if not theme then return false end
-    Nely.Theme = theme
+    local newTheme = Nely.Themes[name]
+    if not newTheme then return false end
+    local oldTheme = Nely.Theme
+    if newTheme == oldTheme then return true end
+
+    -- Every colour already painted came from a slot in the old theme, so a
+    -- reverse lookup on the old palette tells us which slot any given colour
+    -- belongs to. That means no element has to register itself up front.
+    local function Key(color)
+        return ("%d|%d|%d"):format(
+            math.round(color.R * 255),
+            math.round(color.G * 255),
+            math.round(color.B * 255)
+        )
+    end
+
+    local slotOf = {}
+    for slot, color in pairs(oldTheme) do
+        slotOf[Key(color)] = slot
+    end
+
+    local function Translate(color)
+        local slot = slotOf[Key(color)]
+        return slot and newTheme[slot] or nil
+    end
+
+    local function Swap(inst, prop)
+        local swapped = Translate(inst[prop])
+        if swapped then inst[prop] = swapped end
+    end
+
+    for _, inst in ipairs(Root:GetDescendants()) do
+        if inst:IsA("GuiObject") then
+            Swap(inst, "BackgroundColor3")
+        end
+        if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
+            Swap(inst, "TextColor3")
+        end
+        if inst:IsA("TextBox") then
+            Swap(inst, "PlaceholderColor3")
+        end
+        if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
+            Swap(inst, "ImageColor3")
+        end
+        if inst:IsA("ScrollingFrame") then
+            Swap(inst, "ScrollBarImageColor3")
+        end
+        if inst:IsA("UIStroke") then
+            Swap(inst, "Color")
+        end
+        if inst:IsA("UIGradient") then
+            local points, changed = {}, false
+            for _, keypoint in ipairs(inst.Color.Keypoints) do
+                local swapped = Translate(keypoint.Value)
+                if swapped then changed = true end
+                table.insert(points,
+                    ColorSequenceKeypoint.new(keypoint.Time, swapped or keypoint.Value))
+            end
+            if changed then inst.Color = ColorSequence.new(points) end
+        end
+    end
+
+    Nely.Theme = newTheme
     return true
 end
 
