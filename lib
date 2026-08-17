@@ -1398,9 +1398,8 @@ function Nely:CreateWindow(opts)
         Parent                 = topbar,
     })
 
-    local subLabel
     if subtitle ~= "" then
-        subLabel = New("TextLabel", {
+        New("TextLabel", {
             Size                   = UDim2.fromOffset(240, 14),
             Position               = UDim2.new(0, 52, 0.5, 9),
             AnchorPoint            = Vector2.new(0, 0.5),
@@ -1424,22 +1423,42 @@ function Nely:CreateWindow(opts)
     -- uses, so this costs one lookup that is already cached.
     ----------------------------------------------------------------
 
+    -- Right rail: game badge, then the credit pill, laid out on one line and
+    -- right-aligned so neither has to know how wide the other is. They used
+    -- to be positioned independently, which is why the badge ended up under
+    -- the title instead of beside the credit.
+    local topbarRight = New("Frame", {
+        Name                   = "TopbarRight",
+        Size                   = UDim2.fromOffset(0, 24),
+        Position               = UDim2.new(1, -82, 0.5, 0),
+        AnchorPoint            = Vector2.new(1, 0.5),
+        AutomaticSize          = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1,
+        ZIndex                 = 21,
+        Parent                 = topbar,
+    }, {
+        New("UIListLayout", {
+            Padding             = UDim.new(0, 6),
+            FillDirection       = Enum.FillDirection.Horizontal,
+            HorizontalAlignment = Enum.HorizontalAlignment.Right,
+            VerticalAlignment   = Enum.VerticalAlignment.Center,
+            SortOrder           = Enum.SortOrder.LayoutOrder,
+        }),
+    })
+
     if opts.ShowGame ~= false then
         local badge = New("Frame", {
             Name                   = "GameBadge",
             Size                   = UDim2.fromOffset(0, 24),
-            Position               = UDim2.new(0, 52, 0.5, subtitle ~= "" and 9 or 0),
-            AnchorPoint            = Vector2.new(0, 0.5),
             AutomaticSize          = Enum.AutomaticSize.X,
             BackgroundColor3       = theme.Elevated,
             BackgroundTransparency = 0.3,
             BorderSizePixel        = 0,
             Visible                = false,
+            LayoutOrder            = 1,
             ZIndex                 = 21,
-            Parent                 = topbar,
-        }, { Corner(7), Stroke(theme.BorderSoft, 1, 0.5), Pad(0, 0, 4, 9) })
-
-        if subLabel then subLabel.Visible = false end
+            Parent                 = topbarRight,
+        }, { Corner(7), Stroke(theme.BorderSoft, 1, 0.5), Pad(0, 0, 5, 9) })
 
         local thumb = New("ImageLabel", {
             Size                   = UDim2.fromOffset(16, 16),
@@ -1478,8 +1497,9 @@ function Nely:CreateWindow(opts)
             if placeName == "" or not placeName then return end
 
             -- Trim: place names run long and would push past the controls.
-            if #placeName > 26 then
-                placeName = string.sub(placeName, 1, 25) .. "\u{2026}"
+            local limit = compact and 14 or 22
+            if #placeName > limit then
+                placeName = string.sub(placeName, 1, limit - 1) .. "\u{2026}"
             end
             nameLabel.Text = placeName
             badge.Visible  = true
@@ -1529,16 +1549,15 @@ function Nely:CreateWindow(opts)
     if opts.Credit then
         local credit = New("TextButton", {
             Name                   = "Credit",
-            Size                   = UDim2.fromOffset(0, 22),
-            Position               = UDim2.new(1, -84, 0.5, 0),
-            AnchorPoint            = Vector2.new(1, 0.5),
+            Size                   = UDim2.fromOffset(0, 24),
             AutomaticSize          = Enum.AutomaticSize.X,
             BackgroundColor3       = theme.Elevated,
             BackgroundTransparency = 0.35,
             AutoButtonColor        = false,
             Text                   = "",
+            LayoutOrder            = 2,
             ZIndex                 = 22,
-            Parent                 = topbar,
+            Parent                 = topbarRight,
         }, { Corner(7), Pad(0, 0, 8, 9) })
 
         local creditIcon = Icons.Render("github", credit, 12, theme.TextDim, 23)
@@ -1885,34 +1904,42 @@ function Nely:CreateWindow(opts)
 
         Window._tabOrder = Window._tabOrder + 1
 
+        -- Icon and title share one horizontal layout. Previously the icon
+        -- was centred while the title was bottom-aligned in a full-height
+        -- label, which stacked them instead of setting them side by side.
         local header = New("Frame", {
             Name                   = "Section",
-            Size                   = UDim2.new(1, 0, 0, 26),
+            Size                   = UDim2.new(1, 0, 0, 30),
             BackgroundTransparency = 1,
             LayoutOrder            = Window._tabOrder,
             ZIndex                 = 17,
             Parent                 = tabList,
+        }, {
+            New("UIListLayout", {
+                Padding           = UDim.new(0, 6),
+                FillDirection     = Enum.FillDirection.Horizontal,
+                VerticalAlignment = Enum.VerticalAlignment.Center,
+                SortOrder         = Enum.SortOrder.LayoutOrder,
+            }),
+            Pad(10, 0, 5, 0),
         })
 
-        local textX = 4
         if sectionOpts.Icon then
             local mark = Icons.Render(sectionOpts.Icon, header, 12, theme.TextDim, 18)
-            mark.Position    = UDim2.new(0, 4, 0.5, 2)
-            mark.AnchorPoint = Vector2.new(0, 0.5)
-            textX = 21
+            mark.LayoutOrder = 1
         end
 
         New("TextLabel", {
-            Size                   = UDim2.new(1, -textX, 1, 0),
-            Position               = UDim2.fromOffset(textX, 4),
+            Size                   = UDim2.fromOffset(0, 14),
+            AutomaticSize          = Enum.AutomaticSize.X,
             BackgroundTransparency = 1,
             Text                   = string.upper(sectionOpts.Title or "Section"),
             TextColor3             = theme.TextDim,
             TextSize               = 10,
             Font                   = Enum.Font.GothamBold,
             TextXAlignment         = Enum.TextXAlignment.Left,
-            TextYAlignment         = Enum.TextYAlignment.Bottom,
-            TextTruncate           = Enum.TextTruncate.AtEnd,
+            TextYAlignment         = Enum.TextYAlignment.Center,
+            LayoutOrder            = 2,
             ZIndex                 = 18,
             Parent                 = header,
         })
@@ -2070,7 +2097,10 @@ function Nely:CreateWindow(opts)
             Tween(label, { TextColor3 = theme.TextDim }, EASE.Snap)
         end)
         btn.MouseButton1Click:Connect(function()
-            Ripple(btn, 19)
+            -- Ripple sat at ZIndex 19, above the icon (18) and label (18), so
+            -- every click swept a white disc across them. It belongs behind
+            -- the content, not over it.
+            Ripple(btn, 17)
             Activate()
         end)
 
@@ -3794,15 +3824,19 @@ function Nely:CreateWindow(opts)
             local fpsValue     = Stat("FPS", "pulse", 3)
 
             -- detail rows
+            -- Three 18px rows plus two 6px gaps plus 20px of padding needs
+            -- 86px; the card was fixed at 68, so Uptime hung out the bottom.
+            -- Sizing from content means a fourth row can't reintroduce it.
             local detail = New("Frame", {
-                Size                   = UDim2.new(1, 0, 0, 68),
+                Size                   = UDim2.new(1, 0, 0, 0),
+                AutomaticSize          = Enum.AutomaticSize.Y,
                 BackgroundColor3       = theme.Surface,
                 BackgroundTransparency = 0.2,
                 BorderSizePixel        = 0,
                 LayoutOrder            = NextOrder(),
                 ZIndex                 = 17,
                 Parent                 = page,
-            }, { Corner(11), Stroke(theme.BorderSoft, 1, 0.45), Pad(10, 10, 12, 12), List(6) })
+            }, { Corner(11), Stroke(theme.BorderSoft, 1, 0.45), Pad(12, 12, 12, 12), List(6) })
 
             local function DetailRow(label, order)
                 local holder = New("Frame", {
