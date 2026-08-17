@@ -334,7 +334,7 @@ local function Shadow(parent, spread, opacity, radius)
         ZIndex                 = (parent.ZIndex or 1) - 1,
         Parent                 = parent,
     })
-    local layers = 7
+    local layers = 4
     for i = 1, layers do
         local ratio = i / layers
         New("Frame", {
@@ -352,554 +352,86 @@ local function Shadow(parent, spread, opacity, radius)
 end
 
 --==================================================================
---  VECTOR ICONS
---  Every icon is drawn from primitives. No asset IDs, no emojis.
+--  ICONS
+--
+--  Icons come from Footagesus/Icons (Lucide set) — the same artwork
+--  WindUI uses, so nothing here is hand-drawn or improvised.
+--
+--  Main-v2.lua is a loader that pulls SIX packs on startup (lucide,
+--  solar, craft, geist, sfsymbols, gravity) — seven HTTP round trips
+--  before a single pixel renders. Only the Lucide set is used here,
+--  so the pack is fetched directly: one request, 1,715 icons.
+--
+--  Each icon is a single ImageLabel. The previous build assembled
+--  every glyph from six to eight Frames and UIStrokes, which is what
+--  made them look improvised and cost ~7x the instances.
 --==================================================================
 
-local Icons = {}
+local LUCIDE_URL =
+    "https://raw.githubusercontent.com/Footagesus/Icons/refs/heads/main/lucide/dist/Icons.lua"
 
-local function Bar(parent, w, h, x, y, rot, radius)
-    return New("Frame", {
-        Size                   = UDim2.fromScale(w, h),
-        Position               = UDim2.fromScale(x, y),
-        AnchorPoint            = Vector2.new(0.5, 0.5),
-        Rotation               = rot or 0,
-        BackgroundColor3       = Color3.new(1, 1, 1),
-        BorderSizePixel        = 0,
-        ZIndex                 = parent.ZIndex,
-        Parent                 = parent,
-    }, { Corner(radius or 1) })
-end
+local Icons = { Set = nil, Loaded = false }
 
-local function Ring(parent, size, x, y, thickness)
-    local ring = New("Frame", {
-        Size                   = UDim2.fromScale(size, size),
-        Position               = UDim2.fromScale(x, y),
-        AnchorPoint            = Vector2.new(0.5, 0.5),
-        BackgroundTransparency = 1,
-        ZIndex                 = parent.ZIndex,
-        Parent                 = parent,
-    }, {
-        New("UICorner", { CornerRadius = UDim.new(1, 0) }),
-        New("UIStroke", { Color = Color3.new(1, 1, 1), Thickness = thickness or 1.6 }),
-    })
-    return ring
-end
-
-local function Dot(parent, size, x, y)
-    return New("Frame", {
-        Size             = UDim2.fromScale(size, size),
-        Position         = UDim2.fromScale(x, y),
-        AnchorPoint      = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = Color3.new(1, 1, 1),
-        BorderSizePixel  = 0,
-        ZIndex           = parent.ZIndex,
-        Parent           = parent,
-    }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
-end
-
-local function Box(parent, w, h, x, y, thickness, radius)
-    return New("Frame", {
-        Size                   = UDim2.fromScale(w, h),
-        Position               = UDim2.fromScale(x, y),
-        AnchorPoint            = Vector2.new(0.5, 0.5),
-        BackgroundTransparency = 1,
-        ZIndex                 = parent.ZIndex,
-        Parent                 = parent,
-    }, {
-        Corner(radius or 2),
-        New("UIStroke", { Color = Color3.new(1, 1, 1), Thickness = thickness or 1.6 }),
-    })
-end
-
--- Each drawer receives a square container and fills it 0..1 in scale space.
-Icons.home = function(c)
-    Bar(c, 0.62, 0.11, 0.30, 0.30, -42, 2)
-    Bar(c, 0.62, 0.11, 0.70, 0.30, 42, 2)
-    Box(c, 0.56, 0.44, 0.5, 0.68, 1.6, 2)
-end
-
-Icons.grid = function(c)
-    Box(c, 0.34, 0.34, 0.30, 0.30, 1.6, 2)
-    Box(c, 0.34, 0.34, 0.70, 0.30, 1.6, 2)
-    Box(c, 0.34, 0.34, 0.30, 0.70, 1.6, 2)
-    Box(c, 0.34, 0.34, 0.70, 0.70, 1.6, 2)
-end
-
-Icons.gamepad = function(c)
-    Box(c, 0.92, 0.52, 0.5, 0.54, 1.6, 8)
-    Bar(c, 0.22, 0.08, 0.30, 0.54, 0, 1)
-    Bar(c, 0.08, 0.22, 0.30, 0.54, 0, 1)
-    New("Frame", {
-        Size = UDim2.fromScale(0.11, 0.11), Position = UDim2.fromScale(0.66, 0.46),
-        AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.new(1, 1, 1),
-        BorderSizePixel = 0, ZIndex = c.ZIndex, Parent = c,
-    }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
-    New("Frame", {
-        Size = UDim2.fromScale(0.11, 0.11), Position = UDim2.fromScale(0.78, 0.62),
-        AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.new(1, 1, 1),
-        BorderSizePixel = 0, ZIndex = c.ZIndex, Parent = c,
-    }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
-end
-
--- The old gear put six long spokes outside a small ring, which read as an
--- asterisk rather than a gear. Teeth are now short and straddle the body ring.
-Icons.settings = function(c)
-    Ring(c, 0.38, 0.5, 0.5, 1.6)
-    Ring(c, 0.70, 0.5, 0.5, 1.6)
-    for i = 0, 7 do
-        local wrap = New("Frame", {
-            Size                   = UDim2.fromScale(1, 1),
-            BackgroundTransparency = 1,
-            Rotation               = i * 45,
-            ZIndex                 = c.ZIndex,
-            Parent                 = c,
-        })
-        Bar(wrap, 0.14, 0.15, 0.5, 0.17, 0, 1)
+do
+    local ok, pack = pcall(function()
+        return loadstring(game:HttpGet(LUCIDE_URL))()
+    end)
+    if ok and type(pack) == "table" then
+        Icons.Set    = pack
+        Icons.Loaded = true
     end
 end
 
--- Three rails with knobs at staggered positions. Reads as settings instantly
--- and, unlike a gear, it's made of shapes that survive being drawn from
--- rectangles at 15px.
-Icons.sliders = function(c)
-    Bar(c, 0.80, 0.085, 0.5, 0.23, 0, 2)
-    Bar(c, 0.80, 0.085, 0.5, 0.50, 0, 2)
-    Bar(c, 0.80, 0.085, 0.5, 0.77, 0, 2)
-    Dot(c, 0.25, 0.66, 0.23)
-    Dot(c, 0.25, 0.34, 0.50)
-    Dot(c, 0.25, 0.71, 0.77)
+-- Names carried over from earlier builds, mapped to their Lucide
+-- equivalents so existing calls keep working.
+local ICON_ALIASES = {
+    home       = "house",
+    grid       = "layout-grid",
+    gamepad    = "gamepad-2",
+    sliders    = "sliders-horizontal",
+    close      = "x",
+    minimize   = "minus",
+    chevron    = "chevron-down",
+    bolt       = "zap",
+    alert      = "triangle-alert",
+    pulse      = "activity",
+    chat       = "message-circle",
+    unlock     = "lock-open",
+    eyeOff     = "eye-off",
+    trash      = "trash-2",
+    refresh    = "refresh-cw",
+    mapPin     = "map-pin",
+    filter     = "list-filter",
+    more       = "ellipsis",
+    edit       = "pencil",
+    arrowRight = "arrow-right",
+    checkCircle = "circle-check",
+    xCircle    = "circle-x",
+}
+
+function Icons.Asset(name)
+    if not (Icons.Set and name) then return nil end
+    return Icons.Set[ICON_ALIASES[name] or name]
 end
 
-Icons.search = function(c)
-    Ring(c, 0.60, 0.42, 0.42, 1.7)
-    Bar(c, 0.30, 0.11, 0.75, 0.75, 45, 2)
-end
-
-Icons.close = function(c)
-    Bar(c, 0.72, 0.11, 0.5, 0.5, 45, 2)
-    Bar(c, 0.72, 0.11, 0.5, 0.5, -45, 2)
-end
-
-Icons.minimize = function(c)
-    Bar(c, 0.66, 0.11, 0.5, 0.5, 0, 2)
-end
-
-Icons.chevron = function(c)
-    Bar(c, 0.42, 0.11, 0.32, 0.44, 45, 2)
-    Bar(c, 0.42, 0.11, 0.68, 0.44, -45, 2)
-end
-
-Icons.check = function(c)
-    Bar(c, 0.32, 0.12, 0.34, 0.62, 45, 2)
-    Bar(c, 0.60, 0.12, 0.60, 0.46, -45, 2)
-end
-
-Icons.bolt = function(c)
-    Bar(c, 0.16, 0.52, 0.42, 0.32, 18, 2)
-    Bar(c, 0.16, 0.52, 0.58, 0.68, 18, 2)
-end
-
-Icons.info = function(c)
-    Ring(c, 0.86, 0.5, 0.5, 1.6)
-    New("Frame", {
-        Size = UDim2.fromScale(0.11, 0.11), Position = UDim2.fromScale(0.5, 0.28),
-        AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.new(1, 1, 1),
-        BorderSizePixel = 0, ZIndex = c.ZIndex, Parent = c,
-    }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
-    Bar(c, 0.11, 0.34, 0.5, 0.58, 0, 2)
-end
-
-Icons.alert = function(c)
-    Bar(c, 0.68, 0.11, 0.32, 0.42, -60, 2)
-    Bar(c, 0.68, 0.11, 0.68, 0.42, 60, 2)
-    Bar(c, 0.80, 0.11, 0.5, 0.80, 0, 2)
-    Bar(c, 0.10, 0.26, 0.5, 0.44, 0, 2)
-    New("Frame", {
-        Size = UDim2.fromScale(0.10, 0.10), Position = UDim2.fromScale(0.5, 0.65),
-        AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.new(1, 1, 1),
-        BorderSizePixel = 0, ZIndex = c.ZIndex, Parent = c,
-    }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
-end
-
-Icons.shield = function(c)
-    Bar(c, 0.13, 0.62, 0.26, 0.42, 8, 2)
-    Bar(c, 0.13, 0.62, 0.74, 0.42, -8, 2)
-    Bar(c, 0.52, 0.12, 0.5, 0.14, 0, 2)
-    Bar(c, 0.34, 0.12, 0.38, 0.78, 38, 2)
-    Bar(c, 0.34, 0.12, 0.62, 0.78, -38, 2)
-end
-
-Icons.star = function(c)
-    for i = 0, 4 do
-        local wrap = New("Frame", {
-            Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-            Rotation = i * 72, ZIndex = c.ZIndex, Parent = c,
-        })
-        Bar(wrap, 0.13, 0.42, 0.5, 0.28, 0, 2)
-    end
-end
-
-Icons.user = function(c)
-    Ring(c, 0.40, 0.5, 0.32, 1.7)
-    Bar(c, 0.13, 0.34, 0.24, 0.76, -22, 3)
-    Bar(c, 0.13, 0.34, 0.76, 0.76, 22, 3)
-    Bar(c, 0.46, 0.12, 0.5, 0.90, 0, 3)
-end
-
-Icons.code = function(c)
-    Bar(c, 0.34, 0.11, 0.24, 0.36, 55, 2)
-    Bar(c, 0.34, 0.11, 0.24, 0.64, -55, 2)
-    Bar(c, 0.34, 0.11, 0.76, 0.36, -55, 2)
-    Bar(c, 0.34, 0.11, 0.76, 0.64, 55, 2)
-    Bar(c, 0.11, 0.72, 0.5, 0.5, 15, 2)
-end
-
-Icons.layers = function(c)
-    Bar(c, 0.62, 0.10, 0.5, 0.22, 0, 2)
-    Bar(c, 0.62, 0.10, 0.5, 0.50, 0, 2)
-    Bar(c, 0.62, 0.10, 0.5, 0.78, 0, 2)
-end
-
-Icons.users = function(c)
-    Ring(c, 0.32, 0.36, 0.28, 1.6)
-    Bar(c, 0.11, 0.24, 0.19, 0.68, -20, 3)
-    Bar(c, 0.11, 0.24, 0.53, 0.68, 20, 3)
-    Bar(c, 0.34, 0.11, 0.36, 0.80, 0, 3)
-    Ring(c, 0.23, 0.76, 0.33, 1.4)
-    Bar(c, 0.10, 0.20, 0.68, 0.70, -14, 3)
-    Bar(c, 0.10, 0.20, 0.86, 0.70, 14, 3)
-end
-
-Icons.copy = function(c)
-    Box(c, 0.50, 0.50, 0.37, 0.37, 1.6, 3)
-    Box(c, 0.50, 0.50, 0.63, 0.63, 1.6, 3)
-end
-
-Icons.clock = function(c)
-    Ring(c, 0.84, 0.5, 0.5, 1.6)
-    Bar(c, 0.09, 0.28, 0.5, 0.38, 0, 2)
-    Bar(c, 0.22, 0.09, 0.60, 0.52, 0, 2)
-end
-
-Icons.signal = function(c)
-    Bar(c, 0.12, 0.24, 0.22, 0.80, 0, 2)
-    Bar(c, 0.12, 0.46, 0.45, 0.69, 0, 2)
-    Bar(c, 0.12, 0.68, 0.68, 0.58, 0, 2)
-end
-
-Icons.pulse = function(c)
-    Bar(c, 0.24, 0.10, 0.20, 0.54, 0, 2)
-    Bar(c, 0.28, 0.10, 0.42, 0.42, -58, 2)
-    Bar(c, 0.28, 0.10, 0.60, 0.62, 58, 2)
-    Bar(c, 0.22, 0.10, 0.83, 0.50, 0, 2)
-end
-
-Icons.chat = function(c)
-    Box(c, 0.80, 0.58, 0.5, 0.42, 1.6, 6)
-    Bar(c, 0.15, 0.15, 0.33, 0.76, 45, 2)
-end
-
-Icons.github = function(c)
-    Box(c, 0.88, 0.88, 0.5, 0.5, 1.6, 5)
-    Bar(c, 0.20, 0.085, 0.33, 0.40, 52, 2)
-    Bar(c, 0.20, 0.085, 0.33, 0.60, -52, 2)
-    Bar(c, 0.20, 0.085, 0.66, 0.40, -52, 2)
-    Bar(c, 0.20, 0.085, 0.66, 0.60, 52, 2)
-end
-
-Icons.globe = function(c)
-    Ring(c, 0.86, 0.5, 0.5, 1.6)
-    Ring(c, 0.34, 0.5, 0.5, 1.4)
-    Bar(c, 0.86, 0.09, 0.5, 0.5, 0, 2)
-end
-
---------------------------------------------------------------------
---  EXTENDED SET
---  Every glyph below is built from Frames, UIStrokes and UICorners.
---  WindUI and most libraries fetch icon packs over HTTP, which means a
---  blank UI whenever the CDN is slow, the executor blocks the request,
---  or the pack changes a name. These cost one instance each, render at
---  any size, and recolour with the theme.
---------------------------------------------------------------------
-
-Icons.zap = function(c)
-    Bar(c, 0.15, 0.50, 0.44, 0.30, 20, 2)
-    Bar(c, 0.15, 0.50, 0.56, 0.70, 20, 2)
-    Bar(c, 0.30, 0.11, 0.40, 0.50, 0, 2)
-end
-
-Icons.lock = function(c)
-    Box(c, 0.72, 0.50, 0.5, 0.68, 1.6, 4)
-    Bar(c, 0.09, 0.26, 0.32, 0.32, 0, 2)
-    Bar(c, 0.09, 0.26, 0.68, 0.32, 0, 2)
-    Bar(c, 0.36, 0.09, 0.5, 0.20, 0, 2)
-    Dot(c, 0.13, 0.5, 0.66)
-end
-
-Icons.unlock = function(c)
-    Box(c, 0.72, 0.50, 0.5, 0.68, 1.6, 4)
-    Bar(c, 0.09, 0.26, 0.32, 0.32, 0, 2)
-    Bar(c, 0.30, 0.09, 0.47, 0.20, 0, 2)
-    Dot(c, 0.13, 0.5, 0.66)
-end
-
-Icons.key = function(c)
-    Ring(c, 0.42, 0.30, 0.32, 1.7)
-    Bar(c, 0.52, 0.10, 0.60, 0.62, -40, 2)
-    Bar(c, 0.16, 0.10, 0.72, 0.62, 50, 2)
-    Bar(c, 0.16, 0.10, 0.84, 0.76, 50, 2)
-end
-
-Icons.eye = function(c)
-    Bar(c, 0.62, 0.10, 0.5, 0.34, 18, 3)
-    Bar(c, 0.62, 0.10, 0.5, 0.66, -18, 3)
-    Ring(c, 0.34, 0.5, 0.5, 1.6)
-end
-
-Icons.eyeOff = function(c)
-    Bar(c, 0.55, 0.10, 0.46, 0.36, 14, 3)
-    Bar(c, 0.55, 0.10, 0.54, 0.64, -14, 3)
-    Bar(c, 0.92, 0.10, 0.5, 0.5, 42, 2)
-end
-
-Icons.target = function(c)
-    Ring(c, 0.88, 0.5, 0.5, 1.6)
-    Ring(c, 0.44, 0.5, 0.5, 1.6)
-    Dot(c, 0.14, 0.5, 0.5)
-end
-
-Icons.trash = function(c)
-    Bar(c, 0.66, 0.09, 0.5, 0.24, 0, 2)
-    Bar(c, 0.24, 0.09, 0.5, 0.13, 0, 2)
-    Box(c, 0.50, 0.56, 0.5, 0.60, 1.6, 3)
-    Bar(c, 0.07, 0.30, 0.42, 0.60, 0, 2)
-    Bar(c, 0.07, 0.30, 0.58, 0.60, 0, 2)
-end
-
-Icons.download = function(c)
-    Bar(c, 0.10, 0.46, 0.5, 0.34, 0, 2)
-    Bar(c, 0.28, 0.10, 0.38, 0.52, -45, 2)
-    Bar(c, 0.28, 0.10, 0.62, 0.52, 45, 2)
-    Bar(c, 0.66, 0.10, 0.5, 0.82, 0, 2)
-end
-
-Icons.upload = function(c)
-    Bar(c, 0.10, 0.46, 0.5, 0.52, 0, 2)
-    Bar(c, 0.28, 0.10, 0.38, 0.34, 45, 2)
-    Bar(c, 0.28, 0.10, 0.62, 0.34, -45, 2)
-    Bar(c, 0.66, 0.10, 0.5, 0.82, 0, 2)
-end
-
-Icons.refresh = function(c)
-    Ring(c, 0.74, 0.5, 0.5, 1.7)
-    New("Frame", {
-        Size = UDim2.fromScale(0.34, 0.34), Position = UDim2.fromScale(0.78, 0.22),
-        AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1,
-        ZIndex = c.ZIndex, Parent = c,
-    })
-    Bar(c, 0.24, 0.10, 0.80, 0.24, -45, 2)
-    Bar(c, 0.24, 0.10, 0.20, 0.76, -45, 2)
-end
-
-Icons.play = function(c)
-    Bar(c, 0.10, 0.46, 0.36, 0.5, 0, 2)
-    Bar(c, 0.42, 0.10, 0.55, 0.32, 55, 2)
-    Bar(c, 0.42, 0.10, 0.55, 0.68, -55, 2)
-end
-
-Icons.pause = function(c)
-    Bar(c, 0.13, 0.60, 0.37, 0.5, 0, 2)
-    Bar(c, 0.13, 0.60, 0.63, 0.5, 0, 2)
-end
-
-Icons.plus = function(c)
-    Bar(c, 0.66, 0.11, 0.5, 0.5, 0, 2)
-    Bar(c, 0.11, 0.66, 0.5, 0.5, 0, 2)
-end
-
-Icons.minus = function(c)
-    Bar(c, 0.66, 0.11, 0.5, 0.5, 0, 2)
-end
-
-Icons.folder = function(c)
-    Box(c, 0.84, 0.56, 0.5, 0.60, 1.6, 4)
-    Bar(c, 0.36, 0.09, 0.32, 0.28, 0, 2)
-    Bar(c, 0.10, 0.14, 0.15, 0.36, 0, 2)
-end
-
-Icons.file = function(c)
-    Box(c, 0.62, 0.84, 0.5, 0.5, 1.6, 3)
-    Bar(c, 0.34, 0.08, 0.5, 0.44, 0, 2)
-    Bar(c, 0.34, 0.08, 0.5, 0.60, 0, 2)
-    Bar(c, 0.22, 0.08, 0.44, 0.76, 0, 2)
-end
-
-Icons.heart = function(c)
-    Ring(c, 0.44, 0.33, 0.36, 1.7)
-    Ring(c, 0.44, 0.67, 0.36, 1.7)
-    Bar(c, 0.42, 0.10, 0.33, 0.66, 52, 2)
-    Bar(c, 0.42, 0.10, 0.67, 0.66, -52, 2)
-end
-
-Icons.bell = function(c)
-    Ring(c, 0.56, 0.5, 0.44, 1.7)
-    Bar(c, 0.72, 0.09, 0.5, 0.70, 0, 2)
-    Bar(c, 0.18, 0.09, 0.5, 0.84, 0, 2)
-end
-
-Icons.flag = function(c)
-    Bar(c, 0.09, 0.84, 0.24, 0.5, 0, 2)
-    Box(c, 0.52, 0.38, 0.55, 0.34, 1.6, 2)
-end
-
-Icons.mapPin = function(c)
-    Ring(c, 0.56, 0.5, 0.38, 1.7)
-    Bar(c, 0.09, 0.34, 0.5, 0.76, 0, 2)
-    Dot(c, 0.16, 0.5, 0.38)
-end
-
-Icons.coins = function(c)
-    Ring(c, 0.54, 0.36, 0.36, 1.7)
-    Ring(c, 0.54, 0.64, 0.64, 1.7)
-end
-
-Icons.palette = function(c)
-    Ring(c, 0.86, 0.5, 0.5, 1.6)
-    Dot(c, 0.14, 0.32, 0.34)
-    Dot(c, 0.14, 0.62, 0.26)
-    Dot(c, 0.14, 0.74, 0.54)
-end
-
-Icons.terminal = function(c)
-    Box(c, 0.90, 0.72, 0.5, 0.5, 1.6, 4)
-    Bar(c, 0.18, 0.08, 0.33, 0.40, 45, 2)
-    Bar(c, 0.18, 0.08, 0.33, 0.58, -45, 2)
-    Bar(c, 0.24, 0.08, 0.64, 0.66, 0, 2)
-end
-
-Icons.moon = function(c)
-    Ring(c, 0.80, 0.5, 0.5, 1.7)
-    New("Frame", {
-        Size = UDim2.fromScale(0.62, 0.94), Position = UDim2.fromScale(0.90, 0.32),
-        AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1,
-        ZIndex = c.ZIndex, Parent = c,
-    })
-    Dot(c, 0.20, 0.72, 0.28)
-end
-
-Icons.sun = function(c)
-    Ring(c, 0.44, 0.5, 0.5, 1.7)
-    for i = 0, 7 do
-        local wrap = New("Frame", {
-            Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-            Rotation = i * 45, ZIndex = c.ZIndex, Parent = c,
-        })
-        Bar(wrap, 0.08, 0.14, 0.5, 0.11, 0, 2)
-    end
-end
-
-Icons.sparkles = function(c)
-    for i = 0, 3 do
-        local wrap = New("Frame", {
-            Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-            Rotation = i * 90, ZIndex = c.ZIndex, Parent = c,
-        })
-        Bar(wrap, 0.09, 0.34, 0.42, 0.24, 0, 2)
-    end
-    Dot(c, 0.14, 0.78, 0.76)
-end
-
-Icons.flame = function(c)
-    Bar(c, 0.11, 0.56, 0.38, 0.52, 16, 3)
-    Bar(c, 0.11, 0.56, 0.62, 0.52, -16, 3)
-    Bar(c, 0.32, 0.11, 0.5, 0.82, 0, 3)
-    Bar(c, 0.20, 0.11, 0.5, 0.22, 0, 3)
-end
-
-Icons.link = function(c)
-    Bar(c, 0.34, 0.11, 0.32, 0.34, -40, 2)
-    Bar(c, 0.34, 0.11, 0.68, 0.66, -40, 2)
-    Bar(c, 0.34, 0.11, 0.5, 0.5, -40, 2)
-end
-
-Icons.filter = function(c)
-    Bar(c, 0.80, 0.09, 0.5, 0.26, 0, 2)
-    Bar(c, 0.52, 0.09, 0.5, 0.50, 0, 2)
-    Bar(c, 0.24, 0.09, 0.5, 0.74, 0, 2)
-end
-
-Icons.menu = function(c)
-    Bar(c, 0.72, 0.10, 0.5, 0.28, 0, 2)
-    Bar(c, 0.72, 0.10, 0.5, 0.50, 0, 2)
-    Bar(c, 0.72, 0.10, 0.5, 0.72, 0, 2)
-end
-
-Icons.more = function(c)
-    Dot(c, 0.15, 0.22, 0.5)
-    Dot(c, 0.15, 0.50, 0.5)
-    Dot(c, 0.15, 0.78, 0.5)
-end
-
-Icons.save = function(c)
-    Box(c, 0.84, 0.84, 0.5, 0.5, 1.6, 3)
-    Bar(c, 0.44, 0.24, 0.5, 0.26, 0, 2)
-    Box(c, 0.46, 0.28, 0.5, 0.74, 1.6, 2)
-end
-
-Icons.edit = function(c)
-    Bar(c, 0.62, 0.14, 0.54, 0.46, -45, 2)
-    Bar(c, 0.16, 0.14, 0.22, 0.78, -45, 2)
-    Bar(c, 0.14, 0.14, 0.84, 0.16, -45, 2)
-end
-
-Icons.arrowRight = function(c)
-    Bar(c, 0.62, 0.10, 0.46, 0.5, 0, 2)
-    Bar(c, 0.30, 0.10, 0.68, 0.32, 45, 2)
-    Bar(c, 0.30, 0.10, 0.68, 0.68, -45, 2)
-end
-
-Icons.checkCircle = function(c)
-    Ring(c, 0.88, 0.5, 0.5, 1.6)
-    Bar(c, 0.22, 0.10, 0.38, 0.58, 45, 2)
-    Bar(c, 0.42, 0.10, 0.58, 0.46, -45, 2)
-end
-
-Icons.xCircle = function(c)
-    Ring(c, 0.88, 0.5, 0.5, 1.6)
-    Bar(c, 0.42, 0.10, 0.5, 0.5, 45, 2)
-    Bar(c, 0.42, 0.10, 0.5, 0.5, -45, 2)
-end
-
---------------------------------------------------------------------
-
+-- Always returns a container so callers never have to nil-check and
+-- layouts hold their shape even when the pack fails to download.
 function Icons.Render(name, parent, size, color, zindex)
-    local holder = New("Frame", {
+    return New("ImageLabel", {
         Name                   = "Icon",
         Size                   = UDim2.fromOffset(size, size),
         BackgroundTransparency = 1,
+        Image                  = Icons.Asset(name) or "",
+        ImageColor3            = color,
+        ScaleType              = Enum.ScaleType.Fit,
         ZIndex                 = zindex or (parent.ZIndex + 1),
         Parent                 = parent,
     })
-    local drawer = Icons[name]
-    if drawer then drawer(holder) end
-    for _, part in ipairs(holder:GetDescendants()) do
-        if part:IsA("Frame") then
-            part.BackgroundColor3 = color
-        elseif part:IsA("UIStroke") then
-            part.Color = color
-        end
-    end
-    return holder
 end
 
 local function TintIcon(icon, color)
-    for _, part in ipairs(icon:GetDescendants()) do
-        if part:IsA("Frame") and part.BackgroundTransparency < 1 then
-            Tween(part, { BackgroundColor3 = color }, EASE.Snap)
-        elseif part:IsA("UIStroke") then
-            Tween(part, { Color = color }, EASE.Snap)
-        end
+    if icon and icon:IsA("ImageLabel") then
+        Tween(icon, { ImageColor3 = color }, EASE.Snap)
     end
 end
 
@@ -1712,9 +1244,34 @@ function Nely:CreateWindow(opts)
 
     local title     = opts.Title     or "Nely Hub"
     local subtitle  = opts.Subtitle  or ""
-    local winSize   = opts.Size      or UDim2.fromOffset(660, 470)
     local toggleKey = opts.ToggleKey or Enum.KeyCode.RightShift
-    local sidebarW  = opts.SidebarWidth or 168
+
+    ----------------------------------------------------------------
+    -- Responsive sizing
+    --
+    -- A fixed 660x470 is fine on a desktop monitor and enormous on a
+    -- phone, where it can exceed the screen. Size is derived from the
+    -- viewport instead, then clamped, so the same script is usable on
+    -- both without a separate mobile build.
+    ----------------------------------------------------------------
+
+    local viewport = workspace.CurrentCamera
+        and workspace.CurrentCamera.ViewportSize
+        or Vector2.new(1280, 720)
+
+    local compact = viewport.X < 700 or UserInputService.TouchEnabled
+
+    local function Fit(fraction, low, high, axis)
+        return math.floor(math.clamp(axis * fraction, low, high))
+    end
+
+    local winSize = opts.Size or UDim2.fromOffset(
+        Fit(compact and 0.94 or 0.46, 320, 660, viewport.X),
+        Fit(compact and 0.72 or 0.60, 300, 470, viewport.Y)
+    )
+
+    local sidebarW = opts.SidebarWidth or (compact and 124 or 156)
+    local topbarH  = compact and 42 or 46
 
     local Window = {
         Tabs        = {},
@@ -1722,11 +1279,18 @@ function Nely:CreateWindow(opts)
         Minimized   = false,
         Destroyed   = false,
         CurrentSize = winSize,
+        Compact     = compact,
         _tabOrder   = 0,
     }
 
-    local minSize = opts.MinSize or Vector2.new(560, 400)
-    local maxSize = opts.MaxSize or Vector2.new(960, 660)
+    local minSize = opts.MinSize or Vector2.new(
+        math.min(compact and 300 or 480, winSize.X.Offset),
+        math.min(compact and 260 or 340, winSize.Y.Offset)
+    )
+    local maxSize = opts.MaxSize or Vector2.new(
+        math.max(math.floor(viewport.X * 0.96), winSize.X.Offset),
+        math.max(math.floor(viewport.Y * 0.92), winSize.Y.Offset)
+    )
 
     ----------------------------------------------------------------
     -- Shell
@@ -1775,7 +1339,7 @@ function Nely:CreateWindow(opts)
 
     local topbar = New("Frame", {
         Name                   = "Topbar",
-        Size                   = UDim2.new(1, 0, 0, 46),
+        Size                   = UDim2.new(1, 0, 0, topbarH),
         BackgroundTransparency = 1,
         ZIndex                 = 20,
         Parent                 = shell,
@@ -1941,8 +1505,8 @@ function Nely:CreateWindow(opts)
 
     local sidebar = New("Frame", {
         Name                   = "Sidebar",
-        Size                   = UDim2.new(0, sidebarW, 1, -46),
-        Position               = UDim2.fromOffset(0, 46),
+        Size                   = UDim2.new(0, sidebarW, 1, -topbarH),
+        Position               = UDim2.fromOffset(0, topbarH),
         BackgroundTransparency = 1,
         ZIndex                 = 15,
         Parent                 = shell,
@@ -1957,58 +1521,25 @@ function Nely:CreateWindow(opts)
         Parent           = sidebar,
     })
 
-    local tabList = New("Frame", {
-        Size                   = UDim2.new(1, -16, 1, -60),
-        Position               = UDim2.fromOffset(8, 12),
+    -- Tabs scroll. A fixed Frame silently clipped tabs past the sixth
+    -- once a hub had enough of them; this scrolls and grows its own
+    -- canvas from the layout, so any number of tabs stays reachable.
+    local tabList = New("ScrollingFrame", {
+        Name                   = "Tabs",
+        Size                   = UDim2.new(1, -14, 1, -20),
+        Position               = UDim2.fromOffset(7, 10),
         BackgroundTransparency = 1,
-        ZIndex                 = 16,
-        Parent                 = sidebar,
-    }, { List(4) })
-
-    -- sliding indicator
-    local indicator = New("Frame", {
-        Name             = "Indicator",
-        Size             = UDim2.fromOffset(3, 18),
-        Position         = UDim2.fromOffset(0, 12),
-        BackgroundColor3 = theme.Accent,
-        BorderSizePixel  = 0,
-        ZIndex           = 18,
-        Parent           = sidebar,
-    }, { Corner(2) })
-
-    -- footer badge
-    local footer = New("Frame", {
-        Size                   = UDim2.new(1, -16, 0, 34),
-        Position               = UDim2.new(0, 8, 1, -42),
-        BackgroundColor3       = theme.Surface,
-        BackgroundTransparency = 0.3,
         BorderSizePixel        = 0,
+        ScrollBarThickness     = 2,
+        ScrollBarImageColor3   = theme.Border,
+        ScrollBarImageTransparency = 0.4,
+        CanvasSize             = UDim2.new(),
+        AutomaticCanvasSize    = Enum.AutomaticSize.Y,
+        ScrollingDirection     = Enum.ScrollingDirection.Y,
+        ElasticBehavior        = Enum.ElasticBehavior.WhenScrollable,
         ZIndex                 = 16,
         Parent                 = sidebar,
-    }, { Corner(9), Stroke(theme.BorderSoft, 1, 0.4) })
-
-    New("Frame", {
-        Size             = UDim2.fromOffset(6, 6),
-        Position         = UDim2.new(0, 10, 0.5, 0),
-        AnchorPoint      = Vector2.new(0, 0.5),
-        BackgroundColor3 = theme.Success,
-        BorderSizePixel  = 0,
-        ZIndex           = 17,
-        Parent           = footer,
-    }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
-
-    New("TextLabel", {
-        Size                   = UDim2.new(1, -26, 1, 0),
-        Position               = UDim2.fromOffset(22, 0),
-        BackgroundTransparency = 1,
-        Text                   = "v" .. Nely.Version,
-        TextColor3             = theme.TextDim,
-        TextSize               = 11,
-        Font                   = Enum.Font.GothamMedium,
-        TextXAlignment         = Enum.TextXAlignment.Left,
-        ZIndex                 = 17,
-        Parent                 = footer,
-    })
+    }, { List(6), Pad(0, 10, 0, 0) })
 
     ----------------------------------------------------------------
     -- Content host
@@ -2016,8 +1547,8 @@ function Nely:CreateWindow(opts)
 
     local content = New("Frame", {
         Name                   = "Content",
-        Size                   = UDim2.new(1, -sidebarW, 1, -46),
-        Position               = UDim2.fromOffset(sidebarW, 46),
+        Size                   = UDim2.new(1, -sidebarW, 1, -topbarH),
+        Position               = UDim2.fromOffset(sidebarW, topbarH),
         BackgroundTransparency = 1,
         ClipsDescendants       = true,
         ZIndex                 = 15,
@@ -2267,7 +1798,7 @@ function Nely:CreateWindow(opts)
         -- sidebar button
         local btn = New("TextButton", {
             Name                   = tabName,
-            Size                   = UDim2.new(1, 0, 0, 34),
+            Size                   = UDim2.new(1, 0, 0, 38),
             BackgroundColor3       = theme.Elevated,
             BackgroundTransparency = 1,
             AutoButtonColor        = false,
@@ -2278,19 +1809,34 @@ function Nely:CreateWindow(opts)
             Parent                 = tabList,
         }, { Corner(9) })
 
-        local icon = Icons.Render(iconName, btn, 15, theme.TextDim, 18)
-        icon.Position    = UDim2.new(0, 11, 0.5, 0)
+        -- The active marker lives on the button rather than sliding down a
+        -- shared rail: the rail was positioned from AbsolutePosition, which
+        -- drifts out of alignment the moment the tab list is scrolled.
+        local marker = New("Frame", {
+            Name                   = "Marker",
+            Size                   = UDim2.fromOffset(3, 0),
+            Position               = UDim2.new(0, 0, 0.5, 0),
+            AnchorPoint            = Vector2.new(0, 0.5),
+            BackgroundColor3       = theme.Accent,
+            BorderSizePixel        = 0,
+            ZIndex                 = 19,
+            Parent                 = btn,
+        }, { Corner(2) })
+
+        local icon = Icons.Render(iconName, btn, 16, theme.TextDim, 18)
+        icon.Position    = UDim2.new(0, 13, 0.5, 0)
         icon.AnchorPoint = Vector2.new(0, 0.5)
 
         local label = New("TextLabel", {
-            Size                   = UDim2.new(1, -38, 1, 0),
-            Position               = UDim2.fromOffset(34, 0),
+            Size                   = UDim2.new(1, -44, 1, 0),
+            Position               = UDim2.fromOffset(38, 0),
             BackgroundTransparency = 1,
             Text                   = tabName,
             TextColor3             = theme.TextDim,
             TextSize               = 13,
             Font                   = Enum.Font.GothamMedium,
             TextXAlignment         = Enum.TextXAlignment.Left,
+            TextTruncate           = Enum.TextTruncate.AtEnd,
             ZIndex                 = 18,
             Parent                 = btn,
         })
@@ -2312,8 +1858,8 @@ function Nely:CreateWindow(opts)
             ZIndex                 = 16,
             Parent                 = content,
         }, {
-            List(10),
-            Pad(16, 20, 16, 14),
+            List(12),
+            Pad(18, 24, 18, 16),
         })
 
         Tab.Page   = page
@@ -2334,10 +1880,10 @@ function Nely:CreateWindow(opts)
                     TextColor3 = active and theme.Text or theme.TextDim,
                 }, EASE.Snap)
                 TintIcon(other._icon, active and theme.Accent or theme.TextDim)
+                Tween(other._marker, {
+                    Size = UDim2.fromOffset(3, active and 20 or 0),
+                }, EASE.Glide)
             end
-
-            local targetY = btn.AbsolutePosition.Y - sidebar.AbsolutePosition.Y + 8
-            Tween(indicator, { Position = UDim2.fromOffset(0, targetY) }, EASE.Glide)
 
             if previous then
                 Tween(previous.Page, { Position = UDim2.fromOffset(-18, 0) }, EASE.Snap)
@@ -2353,6 +1899,7 @@ function Nely:CreateWindow(opts)
 
         Tab._label  = label
         Tab._icon   = icon
+        Tab._marker = marker
         Tab.Activate = Activate
 
         btn.MouseEnter:Connect(function()
@@ -2395,11 +1942,14 @@ function Nely:CreateWindow(opts)
             return row
         end
 
+        -- 16px gutters and a 20px gap between title and description. The
+        -- previous 14/17 pairing put the two lines close enough that they
+        -- read as one block.
         local function RowText(row, name, description)
             local hasDesc = description and description ~= ""
             New("TextLabel", {
-                Size                   = UDim2.new(1, -140, 0, 16),
-                Position               = UDim2.new(0, 14, 0.5, hasDesc and -9 or 0),
+                Size                   = UDim2.new(1, -150, 0, 16),
+                Position               = UDim2.new(0, 16, 0.5, hasDesc and -11 or 0),
                 AnchorPoint            = Vector2.new(0, 0.5),
                 BackgroundTransparency = 1,
                 Text                   = name,
@@ -2413,8 +1963,8 @@ function Nely:CreateWindow(opts)
             })
             if hasDesc then
                 New("TextLabel", {
-                    Size                   = UDim2.new(1, -140, 0, 14),
-                    Position               = UDim2.new(0, 14, 0.5, 8),
+                    Size                   = UDim2.new(1, -150, 0, 14),
+                    Position               = UDim2.new(0, 16, 0.5, 10),
                     AnchorPoint            = Vector2.new(0, 0.5),
                     BackgroundTransparency = 1,
                     Text                   = description,
@@ -2435,7 +1985,7 @@ function Nely:CreateWindow(opts)
 
         function Tab:CreateSection(name)
             local holder = New("Frame", {
-                Size                   = UDim2.new(1, 0, 0, 26),
+                Size                   = UDim2.new(1, 0, 0, 30),
                 BackgroundTransparency = 1,
                 LayoutOrder            = NextOrder(),
                 ZIndex                 = 17,
@@ -2443,7 +1993,7 @@ function Nely:CreateWindow(opts)
             })
             local label = New("TextLabel", {
                 Size                   = UDim2.new(1, 0, 1, 0),
-                Position               = UDim2.fromOffset(2, 6),
+                Position               = UDim2.fromOffset(2, 10),
                 BackgroundTransparency = 1,
                 Text                   = string.upper(name or "Section"),
                 TextColor3             = theme.TextDim,
@@ -2541,7 +2091,7 @@ function Nely:CreateWindow(opts)
 
         function Tab:CreateButton(cfg)
             cfg = cfg or {}
-            local row = Row(cfg.Description and 54 or 44)
+            local row = Row(cfg.Description and 62 or 50)
             RowText(row, cfg.Name or "Button", cfg.Description)
 
             local hit = New("TextButton", {
@@ -2583,7 +2133,7 @@ function Nely:CreateWindow(opts)
         function Tab:CreateToggle(cfg, flag)
             cfg = cfg or {}
             local state = cfg.CurrentValue == true
-            local row = Row(cfg.Description and 54 or 44)
+            local row = Row(cfg.Description and 62 or 50)
             RowText(row, cfg.Name or "Toggle", cfg.Description)
 
             local track = New("Frame", {
@@ -2653,10 +2203,10 @@ function Nely:CreateWindow(opts)
             local value     = cfg.CurrentValue or range[1]
             local suffix    = cfg.Suffix or ""
 
-            local row = Row(56)
+            local row = Row(64)
             New("TextLabel", {
-                Size                   = UDim2.new(1, -80, 0, 15),
-                Position               = UDim2.fromOffset(14, 11),
+                Size                   = UDim2.new(1, -90, 0, 15),
+                Position               = UDim2.fromOffset(16, 13),
                 BackgroundTransparency = 1,
                 Text                   = cfg.Name or "Slider",
                 TextColor3             = theme.Text,
@@ -2669,7 +2219,7 @@ function Nely:CreateWindow(opts)
 
             local readout = New("TextLabel", {
                 Size                   = UDim2.fromOffset(64, 18),
-                Position               = UDim2.new(1, -14, 0, 10),
+                Position               = UDim2.new(1, -16, 0, 12),
                 AnchorPoint            = Vector2.new(1, 0),
                 BackgroundColor3       = theme.Elevated,
                 BorderSizePixel        = 0,
@@ -2682,8 +2232,8 @@ function Nely:CreateWindow(opts)
             }, { Corner(6) })
 
             local track = New("Frame", {
-                Size             = UDim2.new(1, -28, 0, 5),
-                Position         = UDim2.fromOffset(14, 38),
+                Size             = UDim2.new(1, -32, 0, 5),
+                Position         = UDim2.fromOffset(16, 44),
                 BackgroundColor3 = theme.Elevated,
                 BorderSizePixel  = 0,
                 ZIndex           = 18,
@@ -2735,8 +2285,8 @@ function Nely:CreateWindow(opts)
             end
 
             local hit = New("TextButton", {
-                Size                   = UDim2.new(1, 0, 0, 22),
-                Position               = UDim2.fromOffset(0, 30),
+                Size                   = UDim2.new(1, 0, 0, 26),
+                Position               = UDim2.fromOffset(0, 36),
                 BackgroundTransparency = 1,
                 AutoButtonColor        = false,
                 Text                   = "",
@@ -2793,7 +2343,7 @@ function Nely:CreateWindow(opts)
 
         function Tab:CreateInput(cfg, flag)
             cfg = cfg or {}
-            local row = Row(cfg.Description and 54 or 44)
+            local row = Row(cfg.Description and 62 or 50)
             RowText(row, cfg.Name or "Input", cfg.Description)
 
             local field = New("Frame", {
@@ -2856,7 +2406,7 @@ function Nely:CreateWindow(opts)
             for _, v in ipairs(cfg.CurrentOption or {}) do selected[v] = true end
 
             local expanded = false
-            local rowHeight = 44
+            local rowHeight = 50
 
             local row = New("Frame", {
                 Size                   = UDim2.new(1, 0, 0, rowHeight),
@@ -2870,8 +2420,8 @@ function Nely:CreateWindow(opts)
             }, { Corner(11), Stroke(theme.BorderSoft, 1, 0.45) })
 
             New("TextLabel", {
-                Size                   = UDim2.new(1, -150, 0, 16),
-                Position               = UDim2.fromOffset(14, 14),
+                Size                   = UDim2.new(1, -160, 0, 16),
+                Position               = UDim2.fromOffset(16, 17),
                 BackgroundTransparency = 1,
                 Text                   = cfg.Name or "Dropdown",
                 TextColor3             = theme.Text,
@@ -2894,7 +2444,7 @@ function Nely:CreateWindow(opts)
 
             local summary = New("TextLabel", {
                 Size                   = UDim2.fromOffset(130, 16),
-                Position               = UDim2.new(1, -34, 0, 14),
+                Position               = UDim2.new(1, -36, 0, 17),
                 AnchorPoint            = Vector2.new(1, 0),
                 BackgroundTransparency = 1,
                 Text                   = SummaryText(),
@@ -2908,7 +2458,7 @@ function Nely:CreateWindow(opts)
             })
 
             local caret = Icons.Render("chevron", row, 13, theme.TextDim, 18)
-            caret.Position    = UDim2.new(1, -14, 0, 22)
+            caret.Position    = UDim2.new(1, -16, 0, 25)
             caret.AnchorPoint = Vector2.new(1, 0.5)
 
             local optionHost = New("Frame", {
@@ -3041,7 +2591,7 @@ function Nely:CreateWindow(opts)
             local current = cfg.CurrentBind or "None"
             local listening = false
 
-            local row = Row(cfg.Description and 54 or 44)
+            local row = Row(cfg.Description and 62 or 50)
             RowText(row, cfg.Name or "Keybind", cfg.Description)
 
             local pill = New("TextButton", {
@@ -3156,11 +2706,11 @@ function Nely:CreateWindow(opts)
             cfg = cfg or {}
             local value = math.clamp(cfg.Value or 0, 0, 1)
 
-            local row = Row(cfg.Description and 62 or 52)
+            local row = Row(cfg.Description and 68 or 58)
 
             New("TextLabel", {
                 Size                   = UDim2.new(1, -80, 0, 15),
-                Position               = UDim2.fromOffset(14, 11),
+                Position               = UDim2.fromOffset(16, 14),
                 BackgroundTransparency = 1,
                 Text                   = cfg.Name or "Progress",
                 TextColor3             = theme.Text,
@@ -3173,7 +2723,7 @@ function Nely:CreateWindow(opts)
 
             local readout = New("TextLabel", {
                 Size                   = UDim2.fromOffset(56, 15),
-                Position               = UDim2.new(1, -14, 0, 11),
+                Position               = UDim2.new(1, -16, 0, 14),
                 AnchorPoint            = Vector2.new(1, 0),
                 BackgroundTransparency = 1,
                 Text                   = math.floor(value * 100 + 0.5) .. "%",
@@ -3186,8 +2736,8 @@ function Nely:CreateWindow(opts)
             })
 
             local track = New("Frame", {
-                Size             = UDim2.new(1, -28, 0, 6),
-                Position         = UDim2.fromOffset(14, 34),
+                Size             = UDim2.new(1, -32, 0, 6),
+                Position         = UDim2.fromOffset(16, 40),
                 BackgroundColor3 = theme.Elevated,
                 BorderSizePixel  = 0,
                 ZIndex           = 18,
@@ -3228,7 +2778,7 @@ function Nely:CreateWindow(opts)
             local current = cfg.CurrentValue or theme.Accent
             local hue, sat, val = current:ToHSV()
             local expanded = false
-            local rowHeight = 44
+            local rowHeight = 50
 
             local row = New("Frame", {
                 Size                   = UDim2.new(1, 0, 0, rowHeight),
@@ -3242,8 +2792,8 @@ function Nely:CreateWindow(opts)
             }, { Corner(11), Stroke(theme.BorderSoft, 1, 0.45) })
 
             New("TextLabel", {
-                Size                   = UDim2.new(1, -80, 0, 16),
-                Position               = UDim2.fromOffset(14, 14),
+                Size                   = UDim2.new(1, -90, 0, 16),
+                Position               = UDim2.fromOffset(16, 17),
                 BackgroundTransparency = 1,
                 Text                   = cfg.Name or "Colour",
                 TextColor3             = theme.Text,
@@ -3256,7 +2806,7 @@ function Nely:CreateWindow(opts)
 
             local swatch = New("Frame", {
                 Size             = UDim2.fromOffset(38, 22),
-                Position         = UDim2.new(1, -14, 0, 11),
+                Position         = UDim2.new(1, -16, 0, 14),
                 AnchorPoint      = Vector2.new(1, 0),
                 BackgroundColor3 = current,
                 BorderSizePixel  = 0,
@@ -4595,9 +4145,8 @@ function Nely:CreateWindow(opts)
         })
 
         -- push the tab list down to make room
-        tabList.Size     = UDim2.new(1, -16, 1, -100)
-        tabList.Position = UDim2.fromOffset(8, 44)
-        indicator.Position = UDim2.fromOffset(0, 44)
+        tabList.Size     = UDim2.new(1, -14, 1, -58)
+        tabList.Position = UDim2.fromOffset(7, 46)
 
         local function RowText(row)
             local parts = {}
