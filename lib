@@ -1265,13 +1265,22 @@ function Nely:CreateWindow(opts)
         return math.floor(math.clamp(axis * fraction, low, high))
     end
 
+    -- Deliberately smaller than the last build. Rows grew at the same
+    -- time, so a tab holding two elements now fills its page instead of
+    -- leaving a dead area below them.
     local winSize = opts.Size or UDim2.fromOffset(
-        Fit(compact and 0.94 or 0.46, 320, 660, viewport.X),
-        Fit(compact and 0.72 or 0.60, 300, 470, viewport.Y)
+        Fit(compact and 0.92 or 0.40, 310, 560, viewport.X),
+        Fit(compact and 0.68 or 0.54, 280, 410, viewport.Y)
     )
 
-    local sidebarW = opts.SidebarWidth or (compact and 124 or 156)
+    local sidebarW = opts.SidebarWidth or (compact and 118 or 146)
     local topbarH  = compact and 42 or 46
+
+    -- Rows are taller on desktop than the previous build. Paired with the
+    -- smaller window above, a tab with one or two elements now reads as
+    -- full rather than mostly empty.
+    local ROW_H  = compact and 50 or 56
+    local ROW_HD = compact and 62 or 70
 
     local Window = {
         Tabs        = {},
@@ -1280,6 +1289,7 @@ function Nely:CreateWindow(opts)
         Destroyed   = false,
         CurrentSize = winSize,
         Compact     = compact,
+        TabSections = {},
         _tabOrder   = 0,
     }
 
@@ -1388,8 +1398,9 @@ function Nely:CreateWindow(opts)
         Parent                 = topbar,
     })
 
+    local subLabel
     if subtitle ~= "" then
-        New("TextLabel", {
+        subLabel = New("TextLabel", {
             Size                   = UDim2.fromOffset(240, 14),
             Position               = UDim2.new(0, 52, 0.5, 9),
             AnchorPoint            = Vector2.new(0, 0.5),
@@ -1402,6 +1413,81 @@ function Nely:CreateWindow(opts)
             ZIndex                 = 21,
             Parent                 = topbar,
         })
+    end
+
+    ----------------------------------------------------------------
+    -- Current-game badge
+    --
+    -- Sits beside the hub name so you can see at a glance which place
+    -- the script is running in. The name comes from MarketplaceService
+    -- and the thumbnail from the same universe resolver the game grid
+    -- uses, so this costs one lookup that is already cached.
+    ----------------------------------------------------------------
+
+    if opts.ShowGame ~= false then
+        local badge = New("Frame", {
+            Name                   = "GameBadge",
+            Size                   = UDim2.fromOffset(0, 24),
+            Position               = UDim2.new(0, 52, 0.5, subtitle ~= "" and 9 or 0),
+            AnchorPoint            = Vector2.new(0, 0.5),
+            AutomaticSize          = Enum.AutomaticSize.X,
+            BackgroundColor3       = theme.Elevated,
+            BackgroundTransparency = 0.3,
+            BorderSizePixel        = 0,
+            Visible                = false,
+            ZIndex                 = 21,
+            Parent                 = topbar,
+        }, { Corner(7), Stroke(theme.BorderSoft, 1, 0.5), Pad(0, 0, 4, 9) })
+
+        if subLabel then subLabel.Visible = false end
+
+        local thumb = New("ImageLabel", {
+            Size                   = UDim2.fromOffset(16, 16),
+            Position               = UDim2.new(0, 0, 0.5, 0),
+            AnchorPoint            = Vector2.new(0, 0.5),
+            BackgroundColor3       = theme.SurfaceAlt,
+            BackgroundTransparency = 0.4,
+            BorderSizePixel        = 0,
+            ScaleType              = Enum.ScaleType.Crop,
+            ZIndex                 = 22,
+            Parent                 = badge,
+        }, { Corner(5) })
+
+        local nameLabel = New("TextLabel", {
+            Size                   = UDim2.fromOffset(0, 24),
+            Position               = UDim2.fromOffset(21, 0),
+            AutomaticSize          = Enum.AutomaticSize.X,
+            BackgroundTransparency = 1,
+            Text                   = "",
+            TextColor3             = theme.TextSub,
+            TextSize               = 11,
+            Font                   = Enum.Font.GothamMedium,
+            TextXAlignment         = Enum.TextXAlignment.Left,
+            ZIndex                 = 22,
+            Parent                 = badge,
+        })
+
+        Window.GameBadge = badge
+
+        task.spawn(function()
+            local ok, info = pcall(function()
+                return game:GetService("MarketplaceService")
+                    :GetProductInfo(game.PlaceId)
+            end)
+            local placeName = (ok and info and info.Name) or subtitle
+            if placeName == "" or not placeName then return end
+
+            -- Trim: place names run long and would push past the controls.
+            if #placeName > 26 then
+                placeName = string.sub(placeName, 1, 25) .. "\u{2026}"
+            end
+            nameLabel.Text = placeName
+            badge.Visible  = true
+
+            ResolveGameImage({ PlaceId = game.PlaceId }, function(asset)
+                if asset and badge.Parent then thumb.Image = asset end
+            end)
+        end)
     end
 
     -- Window controls
@@ -1783,6 +1869,77 @@ function Nely:CreateWindow(opts)
     end
 
     ----------------------------------------------------------------
+    -- Tab sections
+    --
+    -- A labelled group in the sidebar that owns its own tabs, so a hub
+    -- with twenty scripts can file them under headings instead of one
+    -- flat list. Sections and loose tabs share a single order counter,
+    -- which is what keeps a section's tabs sitting under its heading
+    -- rather than drifting to the bottom of the list.
+    ----------------------------------------------------------------
+
+    function Window:CreateTabSection(sectionOpts)
+        sectionOpts = type(sectionOpts) == "string"
+            and { Title = sectionOpts }
+            or (sectionOpts or {})
+
+        Window._tabOrder = Window._tabOrder + 1
+
+        local header = New("Frame", {
+            Name                   = "Section",
+            Size                   = UDim2.new(1, 0, 0, 26),
+            BackgroundTransparency = 1,
+            LayoutOrder            = Window._tabOrder,
+            ZIndex                 = 17,
+            Parent                 = tabList,
+        })
+
+        local textX = 4
+        if sectionOpts.Icon then
+            local mark = Icons.Render(sectionOpts.Icon, header, 12, theme.TextDim, 18)
+            mark.Position    = UDim2.new(0, 4, 0.5, 2)
+            mark.AnchorPoint = Vector2.new(0, 0.5)
+            textX = 21
+        end
+
+        New("TextLabel", {
+            Size                   = UDim2.new(1, -textX, 1, 0),
+            Position               = UDim2.fromOffset(textX, 4),
+            BackgroundTransparency = 1,
+            Text                   = string.upper(sectionOpts.Title or "Section"),
+            TextColor3             = theme.TextDim,
+            TextSize               = 10,
+            Font                   = Enum.Font.GothamBold,
+            TextXAlignment         = Enum.TextXAlignment.Left,
+            TextYAlignment         = Enum.TextYAlignment.Bottom,
+            TextTruncate           = Enum.TextTruncate.AtEnd,
+            ZIndex                 = 18,
+            Parent                 = header,
+        })
+
+        local Section = { Title = sectionOpts.Title, Tabs = {}, _header = header }
+
+        function Section:CreateTab(tabOpts)
+            local tab = Window:CreateTab(tabOpts)
+            table.insert(Section.Tabs, tab)
+            tab.Section = Section
+            return tab
+        end
+
+        -- Collapse hides the tabs but never the active one, so the page
+        -- can't be left showing content whose tab has disappeared.
+        function Section:SetCollapsed(collapsed)
+            Section.Collapsed = collapsed
+            for _, tab in ipairs(Section.Tabs) do
+                tab.Button.Visible = (not collapsed) or (Window.ActiveTab == tab)
+            end
+        end
+
+        table.insert(Window.TabSections, Section)
+        return Section
+    end
+
+    ----------------------------------------------------------------
     -- Tabs
     ----------------------------------------------------------------
 
@@ -1942,14 +2099,39 @@ function Nely:CreateWindow(opts)
             return row
         end
 
+        -- Optional leading icon. Every element accepts `Icon = "name"`;
+        -- when one is present the text block shifts right to make room,
+        -- so a tab can mix decorated and plain rows without misaligning.
+        local function RowIcon(row, iconName)
+            if not iconName then return 16 end
+            local badge = New("Frame", {
+                Size                   = UDim2.fromOffset(26, 26),
+                Position               = UDim2.new(0, 14, 0.5, 0),
+                AnchorPoint            = Vector2.new(0, 0.5),
+                BackgroundColor3       = theme.Elevated,
+                BackgroundTransparency = 0.25,
+                BorderSizePixel        = 0,
+                ZIndex                 = 18,
+                Parent                 = row,
+            }, { Corner(8) })
+
+            local glyph = Icons.Render(iconName, badge, 15, theme.AccentSoft, 19)
+            glyph.Position    = UDim2.fromScale(0.5, 0.5)
+            glyph.AnchorPoint = Vector2.new(0.5, 0.5)
+
+            row:SetAttribute("HasIcon", true)
+            return 50
+        end
+
         -- 16px gutters and a 20px gap between title and description. The
         -- previous 14/17 pairing put the two lines close enough that they
         -- read as one block.
-        local function RowText(row, name, description)
+        local function RowText(row, name, description, leftPad)
+            leftPad = leftPad or 16
             local hasDesc = description and description ~= ""
             New("TextLabel", {
-                Size                   = UDim2.new(1, -150, 0, 16),
-                Position               = UDim2.new(0, 16, 0.5, hasDesc and -11 or 0),
+                Size                   = UDim2.new(1, -leftPad - 134, 0, 16),
+                Position               = UDim2.new(0, leftPad, 0.5, hasDesc and -11 or 0),
                 AnchorPoint            = Vector2.new(0, 0.5),
                 BackgroundTransparency = 1,
                 Text                   = name,
@@ -1963,8 +2145,8 @@ function Nely:CreateWindow(opts)
             })
             if hasDesc then
                 New("TextLabel", {
-                    Size                   = UDim2.new(1, -150, 0, 14),
-                    Position               = UDim2.new(0, 16, 0.5, 10),
+                    Size                   = UDim2.new(1, -leftPad - 134, 0, 14),
+                    Position               = UDim2.new(0, leftPad, 0.5, 10),
                     AnchorPoint            = Vector2.new(0, 0.5),
                     BackgroundTransparency = 1,
                     Text                   = description,
@@ -2091,8 +2273,8 @@ function Nely:CreateWindow(opts)
 
         function Tab:CreateButton(cfg)
             cfg = cfg or {}
-            local row = Row(cfg.Description and 62 or 50)
-            RowText(row, cfg.Name or "Button", cfg.Description)
+            local row = Row(cfg.Description and ROW_HD or ROW_H)
+            RowText(row, cfg.Name or "Button", cfg.Description, RowIcon(row, cfg.Icon))
 
             local hit = New("TextButton", {
                 Size             = UDim2.fromScale(1, 1),
@@ -2133,8 +2315,8 @@ function Nely:CreateWindow(opts)
         function Tab:CreateToggle(cfg, flag)
             cfg = cfg or {}
             local state = cfg.CurrentValue == true
-            local row = Row(cfg.Description and 62 or 50)
-            RowText(row, cfg.Name or "Toggle", cfg.Description)
+            local row = Row(cfg.Description and ROW_HD or ROW_H)
+            RowText(row, cfg.Name or "Toggle", cfg.Description, RowIcon(row, cfg.Icon))
 
             local track = New("Frame", {
                 Size             = UDim2.fromOffset(38, 21),
@@ -2156,6 +2338,13 @@ function Nely:CreateWindow(opts)
                 Parent           = track,
             }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
 
+            -- Check sits on the empty side of the track and fades with the
+            -- state, so "on" reads at a glance instead of only from the
+            -- knob's position.
+            local tick = Icons.Render("check", track, 11, Color3.new(1, 1, 1), 19)
+            tick.Position         = UDim2.fromOffset(5, 3)
+            tick.ImageTransparency = state and 0.15 or 1
+
             local hit = New("TextButton", {
                 Size                   = UDim2.fromScale(1, 1),
                 BackgroundTransparency = 1,
@@ -2171,6 +2360,7 @@ function Nely:CreateWindow(opts)
                 state = value
                 Tween(track, { BackgroundColor3 = state and theme.Accent or theme.Elevated }, EASE.Snap)
                 Tween(knob, { Position = UDim2.new(0, state and 20 or 3, 0.5, 0) }, EASE.Pop)
+                Tween(tick, { ImageTransparency = state and 0.15 or 1 }, EASE.Snap)
                 if flag then Nely.Flags[flag] = state end
                 api.CurrentValue = state
                 if fire and cfg.Callback then task.spawn(cfg.Callback, state) end
@@ -2203,10 +2393,10 @@ function Nely:CreateWindow(opts)
             local value     = cfg.CurrentValue or range[1]
             local suffix    = cfg.Suffix or ""
 
-            local row = Row(64)
+            local row = Row(compact and 64 or 70)
             New("TextLabel", {
-                Size                   = UDim2.new(1, -90, 0, 15),
-                Position               = UDim2.fromOffset(16, 13),
+                Size                   = UDim2.new(1, -lp - 74, 0, 15),
+                Position               = UDim2.fromOffset(lp, compact and 13 or 16),
                 BackgroundTransparency = 1,
                 Text                   = cfg.Name or "Slider",
                 TextColor3             = theme.Text,
@@ -2219,7 +2409,7 @@ function Nely:CreateWindow(opts)
 
             local readout = New("TextLabel", {
                 Size                   = UDim2.fromOffset(64, 18),
-                Position               = UDim2.new(1, -16, 0, 12),
+                Position               = UDim2.new(1, -16, 0, compact and 12 or 15),
                 AnchorPoint            = Vector2.new(1, 0),
                 BackgroundColor3       = theme.Elevated,
                 BorderSizePixel        = 0,
@@ -2232,8 +2422,8 @@ function Nely:CreateWindow(opts)
             }, { Corner(6) })
 
             local track = New("Frame", {
-                Size             = UDim2.new(1, -32, 0, 5),
-                Position         = UDim2.fromOffset(16, 44),
+                Size             = UDim2.new(1, -lp - 16, 0, 5),
+                Position         = UDim2.fromOffset(lp, compact and 44 or 50),
                 BackgroundColor3 = theme.Elevated,
                 BorderSizePixel  = 0,
                 ZIndex           = 18,
@@ -2286,7 +2476,7 @@ function Nely:CreateWindow(opts)
 
             local hit = New("TextButton", {
                 Size                   = UDim2.new(1, 0, 0, 26),
-                Position               = UDim2.fromOffset(0, 36),
+                Position               = UDim2.fromOffset(0, compact and 36 or 42),
                 BackgroundTransparency = 1,
                 AutoButtonColor        = false,
                 Text                   = "",
@@ -2343,8 +2533,8 @@ function Nely:CreateWindow(opts)
 
         function Tab:CreateInput(cfg, flag)
             cfg = cfg or {}
-            local row = Row(cfg.Description and 62 or 50)
-            RowText(row, cfg.Name or "Input", cfg.Description)
+            local row = Row(cfg.Description and ROW_HD or ROW_H)
+            RowText(row, cfg.Name or "Input", cfg.Description, RowIcon(row, cfg.Icon))
 
             local field = New("Frame", {
                 Size             = UDim2.fromOffset(140, 28),
@@ -2406,7 +2596,7 @@ function Nely:CreateWindow(opts)
             for _, v in ipairs(cfg.CurrentOption or {}) do selected[v] = true end
 
             local expanded = false
-            local rowHeight = 50
+            local rowHeight = ROW_H
 
             local row = New("Frame", {
                 Size                   = UDim2.new(1, 0, 0, rowHeight),
@@ -2419,9 +2609,11 @@ function Nely:CreateWindow(opts)
                 Parent                 = page,
             }, { Corner(11), Stroke(theme.BorderSoft, 1, 0.45) })
 
+            local lp = RowIcon(row, cfg.Icon)
+
             New("TextLabel", {
-                Size                   = UDim2.new(1, -160, 0, 16),
-                Position               = UDim2.fromOffset(16, 17),
+                Size                   = UDim2.new(1, -lp - 144, 0, 16),
+                Position               = UDim2.new(0, lp, 0, math.floor(rowHeight / 2) - 8),
                 BackgroundTransparency = 1,
                 Text                   = cfg.Name or "Dropdown",
                 TextColor3             = theme.Text,
@@ -2444,7 +2636,7 @@ function Nely:CreateWindow(opts)
 
             local summary = New("TextLabel", {
                 Size                   = UDim2.fromOffset(130, 16),
-                Position               = UDim2.new(1, -36, 0, 17),
+                Position               = UDim2.new(1, -36, 0, math.floor(rowHeight / 2) - 8),
                 AnchorPoint            = Vector2.new(1, 0),
                 BackgroundTransparency = 1,
                 Text                   = SummaryText(),
@@ -2458,7 +2650,7 @@ function Nely:CreateWindow(opts)
             })
 
             local caret = Icons.Render("chevron", row, 13, theme.TextDim, 18)
-            caret.Position    = UDim2.new(1, -16, 0, 25)
+            caret.Position    = UDim2.new(1, -16, 0, math.floor(rowHeight / 2) - 6)
             caret.AnchorPoint = Vector2.new(1, 0.5)
 
             local optionHost = New("Frame", {
@@ -2591,8 +2783,8 @@ function Nely:CreateWindow(opts)
             local current = cfg.CurrentBind or "None"
             local listening = false
 
-            local row = Row(cfg.Description and 62 or 50)
-            RowText(row, cfg.Name or "Keybind", cfg.Description)
+            local row = Row(cfg.Description and ROW_HD or ROW_H)
+            RowText(row, cfg.Name or "Keybind", cfg.Description, RowIcon(row, cfg.Icon))
 
             local pill = New("TextButton", {
                 Size             = UDim2.fromOffset(84, 27),
@@ -2706,11 +2898,12 @@ function Nely:CreateWindow(opts)
             cfg = cfg or {}
             local value = math.clamp(cfg.Value or 0, 0, 1)
 
-            local row = Row(cfg.Description and 68 or 58)
+            local row = Row(cfg.Description and ROW_HD or ROW_H)
+            local lp  = RowIcon(row, cfg.Icon)
 
             New("TextLabel", {
                 Size                   = UDim2.new(1, -80, 0, 15),
-                Position               = UDim2.fromOffset(16, 14),
+                Position               = UDim2.fromOffset(lp, 14),
                 BackgroundTransparency = 1,
                 Text                   = cfg.Name or "Progress",
                 TextColor3             = theme.Text,
@@ -2736,8 +2929,8 @@ function Nely:CreateWindow(opts)
             })
 
             local track = New("Frame", {
-                Size             = UDim2.new(1, -32, 0, 6),
-                Position         = UDim2.fromOffset(16, 40),
+                Size             = UDim2.new(1, -lp - 16, 0, 6),
+                Position         = UDim2.fromOffset(lp, 40),
                 BackgroundColor3 = theme.Elevated,
                 BorderSizePixel  = 0,
                 ZIndex           = 18,
@@ -2778,7 +2971,7 @@ function Nely:CreateWindow(opts)
             local current = cfg.CurrentValue or theme.Accent
             local hue, sat, val = current:ToHSV()
             local expanded = false
-            local rowHeight = 50
+            local rowHeight = ROW_H
 
             local row = New("Frame", {
                 Size                   = UDim2.new(1, 0, 0, rowHeight),
@@ -2791,9 +2984,11 @@ function Nely:CreateWindow(opts)
                 Parent                 = page,
             }, { Corner(11), Stroke(theme.BorderSoft, 1, 0.45) })
 
+            local lp = RowIcon(row, cfg.Icon)
+
             New("TextLabel", {
-                Size                   = UDim2.new(1, -90, 0, 16),
-                Position               = UDim2.fromOffset(16, 17),
+                Size                   = UDim2.new(1, -lp - 74, 0, 16),
+                Position               = UDim2.new(0, lp, 0, math.floor(rowHeight / 2) - 8),
                 BackgroundTransparency = 1,
                 Text                   = cfg.Name or "Colour",
                 TextColor3             = theme.Text,
@@ -2806,7 +3001,7 @@ function Nely:CreateWindow(opts)
 
             local swatch = New("Frame", {
                 Size             = UDim2.fromOffset(38, 22),
-                Position         = UDim2.new(1, -16, 0, 14),
+                Position         = UDim2.new(1, -16, 0, math.floor(rowHeight / 2) - 11),
                 AnchorPoint      = Vector2.new(1, 0),
                 BackgroundColor3 = current,
                 BorderSizePixel  = 0,
