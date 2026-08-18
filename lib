@@ -2447,6 +2447,7 @@ function Nely:CreateWindow(opts)
             local suffix    = cfg.Suffix or ""
 
             local row = Row(compact and 64 or 70)
+            local lp  = RowIcon(row, cfg.Icon)
             New("TextLabel", {
                 Size                   = UDim2.new(1, -lp - 74, 0, 15),
                 Position               = UDim2.fromOffset(lp, compact and 13 or 16),
