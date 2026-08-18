@@ -29,96 +29,106 @@ local LocalPlayer = Players.LocalPlayer
 --==================================================================
 
 Nely.Themes = {
-    Obsidian = {
-        Backdrop    = Color3.fromRGB(11, 11, 15),
-        Surface     = Color3.fromRGB(19, 19, 24),
-        SurfaceAlt  = Color3.fromRGB(26, 26, 33),
-        Elevated    = Color3.fromRGB(33, 33, 42),
-        Hover       = Color3.fromRGB(41, 41, 52),
-        Border      = Color3.fromRGB(45, 45, 58),
-        BorderSoft  = Color3.fromRGB(32, 32, 41),
-        Accent      = Color3.fromRGB(124, 107, 255),
-        AccentSoft  = Color3.fromRGB(160, 148, 255),
-        AccentDeep  = Color3.fromRGB(88, 72, 214),
-        Text        = Color3.fromRGB(237, 237, 244),
-        TextSub     = Color3.fromRGB(139, 139, 158),
-        TextDim     = Color3.fromRGB(90, 90, 107),
+    -- Default. Deep blue-grey rather than pure black, with a clear blue
+    -- accent — the palette family most dark tools land on because it stays
+    -- readable for long sessions and doesn't tint everything it touches the
+    -- way a saturated purple does.
+    Cobalt = {
+        Backdrop    = Color3.fromRGB(13, 17, 23),
+        Surface     = Color3.fromRGB(22, 27, 34),
+        SurfaceAlt  = Color3.fromRGB(28, 36, 48),
+        Elevated    = Color3.fromRGB(35, 45, 59),
+        Hover       = Color3.fromRGB(44, 56, 73),
+        Border      = Color3.fromRGB(48, 61, 79),
+        BorderSoft  = Color3.fromRGB(32, 41, 53),
+        Accent      = Color3.fromRGB(61, 139, 253),
+        AccentSoft  = Color3.fromRGB(111, 168, 255),
+        AccentDeep  = Color3.fromRGB(31, 95, 191),
+        Text        = Color3.fromRGB(232, 237, 244),
+        TextSub     = Color3.fromRGB(154, 168, 188),
+        TextDim     = Color3.fromRGB(107, 122, 143),
+        Success     = Color3.fromRGB(63, 185, 80),
+        Danger      = Color3.fromRGB(248, 81, 73),
+        Warning     = Color3.fromRGB(210, 153, 34),
+    },
+    -- Warm neutral. Charcoal with a soft amber accent.
+    Umber = {
+        Backdrop    = Color3.fromRGB(23, 20, 18),
+        Surface     = Color3.fromRGB(32, 28, 25),
+        SurfaceAlt  = Color3.fromRGB(42, 37, 32),
+        Elevated    = Color3.fromRGB(54, 47, 41),
+        Hover       = Color3.fromRGB(67, 58, 50),
+        Border      = Color3.fromRGB(74, 65, 56),
+        BorderSoft  = Color3.fromRGB(48, 42, 37),
+        Accent      = Color3.fromRGB(232, 160, 74),
+        AccentSoft  = Color3.fromRGB(246, 191, 128),
+        AccentDeep  = Color3.fromRGB(187, 118, 40),
+        Text        = Color3.fromRGB(245, 240, 234),
+        TextSub     = Color3.fromRGB(172, 160, 148),
+        TextDim     = Color3.fromRGB(122, 111, 101),
+        Success     = Color3.fromRGB(126, 195, 116),
+        Danger      = Color3.fromRGB(232, 106, 92),
+        Warning     = Color3.fromRGB(228, 176, 76),
+    },
+    -- Cool neutral. Slate with a teal accent.
+    Teal = {
+        Backdrop    = Color3.fromRGB(15, 20, 22),
+        Surface     = Color3.fromRGB(22, 30, 33),
+        SurfaceAlt  = Color3.fromRGB(29, 39, 43),
+        Elevated    = Color3.fromRGB(38, 51, 56),
+        Hover       = Color3.fromRGB(48, 64, 70),
+        Border      = Color3.fromRGB(53, 70, 76),
+        BorderSoft  = Color3.fromRGB(34, 45, 50),
+        Accent      = Color3.fromRGB(45, 190, 176),
+        AccentSoft  = Color3.fromRGB(103, 219, 208),
+        AccentDeep  = Color3.fromRGB(22, 132, 122),
+        Text        = Color3.fromRGB(232, 242, 241),
+        TextSub     = Color3.fromRGB(148, 170, 172),
+        TextDim     = Color3.fromRGB(102, 124, 127),
         Success     = Color3.fromRGB(74, 213, 156),
-        Danger      = Color3.fromRGB(244, 106, 118),
-        Warning     = Color3.fromRGB(246, 187, 84),
+        Danger      = Color3.fromRGB(240, 104, 104),
+        Warning     = Color3.fromRGB(233, 178, 80),
     },
-    Abyss = {
-        Backdrop    = Color3.fromRGB(8, 12, 18),
-        Surface     = Color3.fromRGB(14, 20, 29),
-        SurfaceAlt  = Color3.fromRGB(20, 28, 40),
-        Elevated    = Color3.fromRGB(27, 37, 52),
-        Hover       = Color3.fromRGB(34, 46, 64),
-        Border      = Color3.fromRGB(38, 52, 71),
-        BorderSoft  = Color3.fromRGB(25, 35, 49),
-        Accent      = Color3.fromRGB(56, 189, 248),
-        AccentSoft  = Color3.fromRGB(125, 211, 252),
-        AccentDeep  = Color3.fromRGB(14, 140, 200),
-        Text        = Color3.fromRGB(232, 240, 248),
-        TextSub     = Color3.fromRGB(128, 149, 172),
-        TextDim     = Color3.fromRGB(82, 100, 120),
-        Success     = Color3.fromRGB(52, 211, 153),
-        Danger      = Color3.fromRGB(248, 113, 113),
-        Warning     = Color3.fromRGB(251, 191, 36),
+    -- Green. Forest base with a fresh accent.
+    Moss = {
+        Backdrop    = Color3.fromRGB(15, 21, 17),
+        Surface     = Color3.fromRGB(22, 31, 25),
+        SurfaceAlt  = Color3.fromRGB(30, 41, 33),
+        Elevated    = Color3.fromRGB(39, 53, 43),
+        Hover       = Color3.fromRGB(50, 67, 54),
+        Border      = Color3.fromRGB(55, 73, 59),
+        BorderSoft  = Color3.fromRGB(35, 47, 38),
+        Accent      = Color3.fromRGB(93, 197, 110),
+        AccentSoft  = Color3.fromRGB(139, 222, 152),
+        AccentDeep  = Color3.fromRGB(49, 138, 68),
+        Text        = Color3.fromRGB(233, 243, 234),
+        TextSub     = Color3.fromRGB(151, 172, 154),
+        TextDim     = Color3.fromRGB(104, 124, 108),
+        Success     = Color3.fromRGB(93, 197, 110),
+        Danger      = Color3.fromRGB(238, 105, 97),
+        Warning     = Color3.fromRGB(230, 180, 74),
     },
-    Ember = {
-        Backdrop    = Color3.fromRGB(15, 11, 11),
-        Surface     = Color3.fromRGB(24, 18, 18),
-        SurfaceAlt  = Color3.fromRGB(33, 25, 25),
-        Elevated    = Color3.fromRGB(43, 32, 32),
-        Hover       = Color3.fromRGB(54, 40, 40),
-        Border      = Color3.fromRGB(60, 45, 45),
-        BorderSoft  = Color3.fromRGB(42, 31, 31),
-        Accent      = Color3.fromRGB(248, 113, 93),
-        AccentSoft  = Color3.fromRGB(252, 156, 140),
-        AccentDeep  = Color3.fromRGB(202, 74, 56),
-        Text        = Color3.fromRGB(245, 236, 234),
-        TextSub     = Color3.fromRGB(160, 138, 134),
-        TextDim     = Color3.fromRGB(108, 90, 87),
-        Success     = Color3.fromRGB(74, 213, 156),
-        Danger      = Color3.fromRGB(244, 106, 118),
-        Warning     = Color3.fromRGB(246, 187, 84),
+    -- Grey. No colour cast at all; the accent is the only hue on screen.
+    Graphite = {
+        Backdrop    = Color3.fromRGB(18, 18, 20),
+        Surface     = Color3.fromRGB(26, 26, 29),
+        SurfaceAlt  = Color3.fromRGB(35, 35, 39),
+        Elevated    = Color3.fromRGB(45, 45, 50),
+        Hover       = Color3.fromRGB(57, 57, 63),
+        Border      = Color3.fromRGB(63, 63, 70),
+        BorderSoft  = Color3.fromRGB(41, 41, 46),
+        Accent      = Color3.fromRGB(228, 228, 234),
+        AccentSoft  = Color3.fromRGB(248, 248, 252),
+        AccentDeep  = Color3.fromRGB(163, 163, 172),
+        Text        = Color3.fromRGB(240, 240, 244),
+        TextSub     = Color3.fromRGB(160, 160, 170),
+        TextDim     = Color3.fromRGB(112, 112, 122),
+        Success     = Color3.fromRGB(88, 200, 130),
+        Danger      = Color3.fromRGB(240, 100, 100),
+        Warning     = Color3.fromRGB(232, 180, 80),
     },
-    Mint = {
-        Backdrop    = Color3.fromRGB(9, 14, 13),
-        Surface     = Color3.fromRGB(15, 23, 21),
-        SurfaceAlt  = Color3.fromRGB(21, 32, 29),
-        Elevated    = Color3.fromRGB(28, 42, 38),
-        Hover       = Color3.fromRGB(36, 53, 48),
-        Border      = Color3.fromRGB(40, 60, 54),
-        BorderSoft  = Color3.fromRGB(27, 40, 36),
-        Accent      = Color3.fromRGB(52, 211, 153),
-        AccentSoft  = Color3.fromRGB(110, 231, 183),
-        AccentDeep  = Color3.fromRGB(16, 155, 108),
-        Text        = Color3.fromRGB(233, 245, 241),
-        TextSub     = Color3.fromRGB(129, 158, 150),
-        TextDim     = Color3.fromRGB(84, 107, 101),
-        Success     = Color3.fromRGB(74, 213, 156),
-        Danger      = Color3.fromRGB(244, 106, 118),
-        Warning     = Color3.fromRGB(246, 187, 84),
-    },
-    Rose = {
-        Backdrop    = Color3.fromRGB(16, 10, 14),
-        Surface     = Color3.fromRGB(26, 17, 23),
-        SurfaceAlt  = Color3.fromRGB(35, 23, 31),
-        Elevated    = Color3.fromRGB(46, 30, 41),
-        Hover       = Color3.fromRGB(58, 38, 51),
-        Border      = Color3.fromRGB(64, 42, 56),
-        BorderSoft  = Color3.fromRGB(44, 29, 39),
-        Accent      = Color3.fromRGB(244, 114, 182),
-        AccentSoft  = Color3.fromRGB(249, 168, 212),
-        AccentDeep  = Color3.fromRGB(199, 62, 136),
-        Text        = Color3.fromRGB(247, 235, 242),
-        TextSub     = Color3.fromRGB(165, 133, 152),
-        TextDim     = Color3.fromRGB(110, 87, 101),
-        Success     = Color3.fromRGB(74, 213, 156),
-        Danger      = Color3.fromRGB(244, 106, 118),
-        Warning     = Color3.fromRGB(246, 187, 84),
-    },
+    -- Kept from the previous build so existing scripts that name a theme
+    -- explicitly still resolve instead of silently falling back.
     Nord = {
         Backdrop    = Color3.fromRGB(30, 34, 42),
         Surface     = Color3.fromRGB(38, 43, 53),
@@ -136,24 +146,6 @@ Nely.Themes = {
         Success     = Color3.fromRGB(163, 190, 140),
         Danger      = Color3.fromRGB(191, 97, 106),
         Warning     = Color3.fromRGB(235, 203, 139),
-    },
-    Sunset = {
-        Backdrop    = Color3.fromRGB(18, 12, 20),
-        Surface     = Color3.fromRGB(28, 19, 31),
-        SurfaceAlt  = Color3.fromRGB(38, 26, 42),
-        Elevated    = Color3.fromRGB(50, 34, 55),
-        Hover       = Color3.fromRGB(63, 43, 69),
-        Border      = Color3.fromRGB(70, 48, 77),
-        BorderSoft  = Color3.fromRGB(48, 33, 53),
-        Accent      = Color3.fromRGB(251, 146, 60),
-        AccentSoft  = Color3.fromRGB(253, 186, 116),
-        AccentDeep  = Color3.fromRGB(205, 98, 18),
-        Text        = Color3.fromRGB(248, 238, 240),
-        TextSub     = Color3.fromRGB(166, 140, 158),
-        TextDim     = Color3.fromRGB(112, 92, 106),
-        Success     = Color3.fromRGB(74, 213, 156),
-        Danger      = Color3.fromRGB(244, 106, 118),
-        Warning     = Color3.fromRGB(246, 187, 84),
     },
     Slate = {
         Backdrop    = Color3.fromRGB(15, 17, 21),
@@ -175,12 +167,12 @@ Nely.Themes = {
     },
 }
 
-Nely.Theme = Nely.Themes.Obsidian
+Nely.Theme = Nely.Themes.Cobalt
 
 --------------------------------------------------------------------
 --  CUSTOM THEMES
 --  Only the slots you care about need supplying. Anything left out is
---  inherited from Base (default Obsidian), so a two-line theme is a
+--  inherited from Base (default Cobalt), so a two-line theme is a
 --  legitimate theme — you aren't forced to hand-pick seventeen greys
 --  to change the accent colour.
 --------------------------------------------------------------------
@@ -188,7 +180,7 @@ Nely.Theme = Nely.Themes.Obsidian
 function Nely:AddTheme(spec)
     assert(type(spec) == "table" and spec.Name, "AddTheme needs a table with a Name")
 
-    local base = Nely.Themes[spec.Base or "Obsidian"] or Nely.Themes.Obsidian
+    local base = Nely.Themes[spec.Base or "Cobalt"] or Nely.Themes.Cobalt
     local theme = {}
     for slot, color in pairs(base) do
         theme[slot] = color
@@ -1239,7 +1231,7 @@ end
 
 function Nely:CreateWindow(opts)
     opts = opts or {}
-    local theme = Nely.Themes[opts.Theme or "Obsidian"] or Nely.Themes.Obsidian
+    local theme = Nely.Themes[opts.Theme or "Cobalt"] or Nely.Themes.Cobalt
     Nely.Theme = theme
 
     local title     = opts.Title     or "Nely Hub"
@@ -1430,7 +1422,7 @@ function Nely:CreateWindow(opts)
     local topbarRight = New("Frame", {
         Name                   = "TopbarRight",
         Size                   = UDim2.fromOffset(0, 24),
-        Position               = UDim2.new(1, -82, 0.5, 0),
+        Position               = UDim2.new(1, -88, 0.5, 0),
         AnchorPoint            = Vector2.new(1, 0.5),
         AutomaticSize          = Enum.AutomaticSize.X,
         BackgroundTransparency = 1,
@@ -1438,7 +1430,7 @@ function Nely:CreateWindow(opts)
         Parent                 = topbar,
     }, {
         New("UIListLayout", {
-            Padding             = UDim.new(0, 6),
+            Padding             = UDim.new(0, 10),
             FillDirection       = Enum.FillDirection.Horizontal,
             HorizontalAlignment = Enum.HorizontalAlignment.Right,
             VerticalAlignment   = Enum.VerticalAlignment.Center,
@@ -1497,7 +1489,7 @@ function Nely:CreateWindow(opts)
             if placeName == "" or not placeName then return end
 
             -- Trim: place names run long and would push past the controls.
-            local limit = compact and 14 or 22
+            local limit = compact and 16 or 32
             if #placeName > limit then
                 placeName = string.sub(placeName, 1, limit - 1) .. "\u{2026}"
             end
@@ -1767,7 +1759,33 @@ function Nely:CreateWindow(opts)
     })
     Shadow(orb, 16, 0.5, 25)
 
+    -- The orb carries the game's thumbnail rather than the hub initial, so a
+    -- collapsed window still says which place it belongs to. Inset by 5px on
+    -- each side and Crop-scaled: a square thumbnail in a circular mask has to
+    -- fill the disc, and Fit would letterbox it inside the ring instead.
+    local orbImage = New("ImageLabel", {
+        Name                   = "OrbGame",
+        Size                   = UDim2.new(1, -10, 1, -10),
+        Position               = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint            = Vector2.new(0.5, 0.5),
+        BackgroundTransparency = 1,
+        Image                  = "",
+        ImageTransparency      = 1,
+        ScaleType              = Enum.ScaleType.Crop,
+        ZIndex                 = 402,
+        Parent                 = orb,
+    }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+
+    -- Hub initial stays underneath as the fallback: it shows through until
+    -- the thumbnail resolves, and stays visible if the lookup fails.
     BrandMark(orb, title, opts.Logo, 20, 25, 401)
+
+    ResolveGameImage({ PlaceId = game.PlaceId }, function(asset)
+        if asset and orbImage.Parent then
+            orbImage.Image = asset
+            Tween(orbImage, { ImageTransparency = 0 }, EASE.Smooth)
+        end
+    end)
 
     -- breathing halo
     local halo = New("Frame", {
@@ -2132,12 +2150,17 @@ function Nely:CreateWindow(opts)
         -- Optional leading icon. Every element accepts `Icon = "name"`;
         -- when one is present the text block shifts right to make room,
         -- so a tab can mix decorated and plain rows without misaligning.
+        -- Pinned to the top of the row, not centred in it. A 0.5 scale
+        -- anchor re-centres itself every time the row grows, which is why
+        -- the badge slid down the moment a dropdown or colorpicker opened.
+        -- Offset from the row's *collapsed* height keeps it beside the name.
         local function RowIcon(row, iconName)
             if not iconName then return 16 end
+            local top = math.floor(row.Size.Y.Offset / 2) - 13
             local badge = New("Frame", {
                 Size                   = UDim2.fromOffset(26, 26),
-                Position               = UDim2.new(0, 14, 0.5, 0),
-                AnchorPoint            = Vector2.new(0, 0.5),
+                Position               = UDim2.fromOffset(14, top),
+                AnchorPoint            = Vector2.new(0, 0),
                 BackgroundColor3       = theme.Elevated,
                 BackgroundTransparency = 0.25,
                 BorderSizePixel        = 0,
@@ -4264,73 +4287,6 @@ function Nely:CreateWindow(opts)
         end
 
         return Tab
-    end
-
-    ----------------------------------------------------------------
-    -- Tags
-    ----------------------------------------------------------------
-
-    local tagRow = New("Frame", {
-        Name                   = "Tags",
-        Size                   = UDim2.new(0, 0, 0, 20),
-        Position               = UDim2.new(0, 52, 1, -26),
-        AutomaticSize          = Enum.AutomaticSize.X,
-        BackgroundTransparency = 1,
-        ZIndex                 = 18,
-        Parent                 = sidebar,
-    }, {
-        New("UIListLayout", {
-            Padding       = UDim.new(0, 5),
-            FillDirection = Enum.FillDirection.Horizontal,
-            SortOrder     = Enum.SortOrder.LayoutOrder,
-        }),
-    })
-    tagRow.Visible = false
-
-    local tagOrder = 0
-
-    function Window:Tag(tagOpts)
-        tagOpts = tagOpts or {}
-        tagOrder = tagOrder + 1
-        tagRow.Visible = true
-
-        local tint = tagOpts.Color or theme.Accent
-        local tag = New("Frame", {
-            Size                   = UDim2.fromOffset(0, 20),
-            AutomaticSize          = Enum.AutomaticSize.X,
-            BackgroundColor3       = tint,
-            BackgroundTransparency = 0.84,
-            BorderSizePixel        = 0,
-            LayoutOrder            = tagOrder,
-            ZIndex                 = 19,
-            Parent                 = tagRow,
-        }, { Corner(6), Pad(0, 0, 7, 8) })
-
-        local offset = 0
-        if tagOpts.Icon then
-            local tagIcon = Icons.Render(tagOpts.Icon, tag, 11, tint, 20)
-            tagIcon.Position    = UDim2.new(0, 0, 0.5, 0)
-            tagIcon.AnchorPoint = Vector2.new(0, 0.5)
-            offset = 15
-        end
-
-        local tagLabel = New("TextLabel", {
-            Size                   = UDim2.fromOffset(0, 20),
-            Position               = UDim2.fromOffset(offset, 0),
-            AutomaticSize          = Enum.AutomaticSize.X,
-            BackgroundTransparency = 1,
-            Text                   = tagOpts.Title or "",
-            TextColor3             = tint,
-            TextSize               = 10,
-            Font                   = Enum.Font.GothamBold,
-            ZIndex                 = 20,
-            Parent                 = tag,
-        })
-
-        return {
-            Set     = function(_, text) tagLabel.Text = text end,
-            Destroy = function() tag:Destroy() end,
-        }
     end
 
     ----------------------------------------------------------------
