@@ -6,7 +6,7 @@
 ]]
 
 local Nely = {}
-Nely.Version   = "3.0.0"
+Nely.Version   = "3.1.0"
 Nely.Flags     = {}
 Nely.Connections = {}
 Nely.Unloaded  = false
@@ -18,6 +18,7 @@ Nely.Unloaded  = false
 local TweenService     = game:GetService("TweenService")
 local UserInputService  = game:GetService("UserInputService")
 local RunService        = game:GetService("RunService")
+local TextService       = game:GetService("TextService")
 local Players           = game:GetService("Players")
 local Lighting          = game:GetService("Lighting")
 local CoreGui           = game:GetService("CoreGui")
@@ -869,6 +870,110 @@ function Nely:SetCursorEnabled(state)
 end
 
 --==================================================================
+--  TOOLTIPS
+--
+--  One floating card, reused by every hint in the interface. It hangs
+--  off Root rather than off the row that owns it: a page is a
+--  ScrollingFrame, so a tooltip parented inside one gets clipped at the
+--  page edge exactly when it needs to overhang.
+--
+--  Any element accepts `Info = "text"` and grows a small (i) beside its
+--  name. Nothing is positioned until the card has measured itself, so a
+--  two-word hint and a three-line one both land correctly.
+--==================================================================
+
+local Tip = { Frame = nil, Label = nil, Fade = nil }
+
+local function EnsureTip()
+    if Tip.Frame then return end
+
+    Tip.Frame = New("Frame", {
+        Name                   = "Tooltip",
+        Size                   = UDim2.fromOffset(232, 0),
+        AutomaticSize          = Enum.AutomaticSize.Y,
+        BackgroundColor3       = Nely.Theme.Elevated,
+        BackgroundTransparency = 1,
+        BorderSizePixel        = 0,
+        Visible                = false,
+        ZIndex                 = 980,
+        Parent                 = Root,
+    }, {
+        Corner(9),
+        Stroke(Nely.Theme.Border, 1, 0.3),
+        Pad(8, 8, 11, 11),
+    })
+
+    Tip.Label = New("TextLabel", {
+        -- Fixed width plus TextWrapped, not AutomaticSize.X: a long hint
+        -- on one line would run off the side of the screen.
+        Size                   = UDim2.new(1, 0, 0, 0),
+        AutomaticSize          = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        Text                   = "",
+        TextColor3             = Nely.Theme.TextSub,
+        TextSize               = 11,
+        Font                   = Enum.Font.Gotham,
+        TextXAlignment         = Enum.TextXAlignment.Left,
+        TextYAlignment         = Enum.TextYAlignment.Top,
+        TextWrapped            = true,
+        LineHeight             = 1.25,
+        ZIndex                 = 981,
+        Parent                 = Tip.Frame,
+    })
+end
+
+local function HideTip()
+    if not Tip.Frame then return end
+    if Tip.Fade then Tip.Fade:Cancel() end
+    Tip.Frame.Visible = false
+    Tip.Frame.BackgroundTransparency = 1
+    Tip.Label.TextTransparency = 1
+end
+
+local function ShowTip(text, anchor)
+    EnsureTip()
+    local theme = Nely.Theme
+    Tip.Frame.BackgroundColor3 = theme.Elevated
+    Tip.Label.TextColor3       = theme.TextSub
+    local stroke = Tip.Frame:FindFirstChildOfClass("UIStroke")
+    if stroke then stroke.Color = theme.Border end
+
+    Tip.Label.Text    = text
+    Tip.Frame.Visible = true
+    Tip.Frame.BackgroundTransparency = 1
+    Tip.Label.TextTransparency = 1
+
+    -- One frame of slack so AutomaticSize has produced a real height
+    -- before anything is measured against it.
+    task.defer(function()
+        if not (Tip.Frame and Tip.Frame.Visible and anchor.Parent) then return end
+
+        local pos  = anchor.AbsolutePosition
+        local size = anchor.AbsoluteSize
+        local tip  = Tip.Frame.AbsoluteSize
+        local view = workspace.CurrentCamera
+            and workspace.CurrentCamera.ViewportSize
+            or Vector2.new(1280, 720)
+
+        local x = pos.X + size.X / 2 - tip.X / 2
+        local y = pos.Y - tip.Y - 8
+        -- Above by default, below when there is no room above.
+        if y < 8 then y = pos.Y + size.Y + 8 end
+        x = math.clamp(x, 8, math.max(8, view.X - tip.X - 8))
+
+        Tip.Frame.Position = UDim2.fromOffset(math.floor(x), math.floor(y))
+        Tip.Fade = Tween(Tip.Frame, { BackgroundTransparency = 0.02 }, EASE.Snap)
+        Tween(Tip.Label, { TextTransparency = 0 }, EASE.Snap)
+    end)
+end
+
+local function AttachTooltip(obj, text)
+    if not text or text == "" then return end
+    obj.MouseEnter:Connect(function() ShowTip(text, obj) end)
+    obj.MouseLeave:Connect(HideTip)
+end
+
+--==================================================================
 --  NOTIFICATIONS
 --==================================================================
 
@@ -1271,8 +1376,13 @@ function Nely:CreateWindow(opts)
     -- Rows are taller on desktop than the previous build. Paired with the
     -- smaller window above, a tab with one or two elements now reads as
     -- full rather than mostly empty.
-    local ROW_H  = compact and 50 or 56
-    local ROW_HD = compact and 62 or 70
+    --
+    -- Density = "compact" trades that breathing room for reach: a settings
+    -- page with twenty rows stops needing three screens of scrolling. The
+    -- rows keep their internals, they just lose vertical padding.
+    local dense  = opts.Density == "compact"
+    local ROW_H  = dense and (compact and 42 or 46) or (compact and 50 or 56)
+    local ROW_HD = dense and (compact and 54 or 60) or (compact and 62 or 70)
 
     local Window = {
         Tabs        = {},
@@ -1281,9 +1391,25 @@ function Nely:CreateWindow(opts)
         Destroyed   = false,
         CurrentSize = winSize,
         Compact     = compact,
+        Dense       = dense,
         TabSections = {},
         _tabOrder   = 0,
+        _dependents = {},
     }
+
+    -- Called by any flagged toggle after it settles, so rows that declared
+    -- `Depends = "ThatFlag"` grey themselves out without polling.
+    function Window:_Sync(flag, value)
+        local list = Window._dependents[flag]
+        if not list then return end
+        for _, entry in ipairs(list) do
+            local want = value and true or false
+            if entry.invert then want = not want end
+            if entry.api and entry.api.SetEnabled then
+                entry.api:SetEnabled(want)
+            end
+        end
+    end
 
     local minSize = opts.MinSize or Vector2.new(
         math.min(compact and 300 or 480, winSize.X.Offset),
@@ -1533,6 +1659,8 @@ function Nely:CreateWindow(opts)
 
     local closeBtn = ControlButton("close", -14, theme.Danger)
     local minBtn   = ControlButton("minimize", -48, theme.Warning)
+    local railBtn  = ControlButton("grid", -82, theme.Accent)
+    AttachTooltip(railBtn, "Collapse the sidebar to icons")
 
     ----------------------------------------------------------------
     -- Credit pill
@@ -1651,6 +1779,84 @@ function Nely:CreateWindow(opts)
         ZIndex                 = 15,
         Parent                 = shell,
     })
+
+    ----------------------------------------------------------------
+    -- Sidebar rail
+    --
+    -- Collapses the sidebar down to its icons and gives the page the
+    -- reclaimed width. Tab names move into tooltips rather than being
+    -- dropped, so a railed sidebar is still navigable by someone who
+    -- doesn't recognise every glyph yet.
+    ----------------------------------------------------------------
+
+    local RAIL_W  = 58
+    local railed  = false
+    local searchWrap                       -- assigned by the search block below
+
+    local function ApplyRail(state, animate)
+        railed = state and true or false
+        Window.Railed = railed
+        local width = railed and RAIL_W or sidebarW
+        local ease  = animate == false and EASE.Instant or EASE.Glide
+
+        Tween(sidebar, { Size = UDim2.new(0, width, 1, -topbarH) }, ease)
+        Tween(content, {
+            Size     = UDim2.new(1, -width, 1, -topbarH),
+            Position = UDim2.new(0, width, 0, topbarH),
+        }, ease)
+
+        for _, tab in ipairs(Window.Tabs) do
+            if tab._label then
+                Tween(tab._label, { TextTransparency = railed and 1 or 0 }, EASE.Snap)
+                tab._label.Active = not railed
+            end
+            if tab._icon then
+                -- 44px of usable button width inside the rail, 16px glyph.
+                Tween(tab._icon, {
+                    Position = UDim2.new(0, railed and 14 or 13, 0.5, 0),
+                }, ease)
+            end
+        end
+
+        for _, section in ipairs(Window.TabSections) do
+            local header = section._header
+            if header then
+                local lbl = header:FindFirstChildOfClass("TextLabel")
+                if lbl then lbl.Visible = not railed end
+                local pad = header:FindFirstChildOfClass("UIPadding")
+                if pad then
+                    pad.PaddingLeft = UDim.new(0, railed and 16 or 5)
+                end
+            end
+        end
+
+        -- The sidebar search box has nowhere to go at 58px wide, so it
+        -- steps aside and the tab list takes back the space.
+        if searchWrap then
+            searchWrap.Visible = not railed
+            tabList.Size     = railed and UDim2.new(1, -14, 1, -20) or UDim2.new(1, -14, 1, -58)
+            tabList.Position = railed and UDim2.fromOffset(7, 10) or UDim2.fromOffset(7, 46)
+        end
+    end
+
+    Window.Railed = false
+    function Window:SetRail(state)
+        ApplyRail(state, true)
+    end
+    function Window:ToggleRail()
+        ApplyRail(not railed, true)
+    end
+
+    railBtn.MouseButton1Click:Connect(function()
+        Ripple(railBtn, 24)
+        ApplyRail(not railed, true)
+    end)
+
+    -- SidebarMode = "rail" opens collapsed. Deferred because it walks
+    -- Window.Tabs, and none of them exist yet at this point in the build.
+    if opts.SidebarMode == "rail" then
+        task.defer(function() ApplyRail(true, false) end)
+    end
 
     ----------------------------------------------------------------
     -- Resize grip
@@ -2124,6 +2330,13 @@ function Nely:CreateWindow(opts)
 
         table.insert(Window.Tabs, Tab)
 
+        -- Only while railed. With the sidebar expanded the name is already
+        -- sitting right there, and a tooltip repeating it is just noise.
+        btn.MouseEnter:Connect(function()
+            if Window.Railed then ShowTip(tabName, btn) end
+        end)
+        btn.MouseLeave:Connect(HideTip)
+
         ------------------------------------------------------------
         -- Element scaffolding
         ------------------------------------------------------------
@@ -2131,6 +2344,136 @@ function Nely:CreateWindow(opts)
         local function NextOrder()
             Tab._order = Tab._order + 1
             return Tab._order
+        end
+
+        ------------------------------------------------------------
+        -- Info dot
+        --
+        -- Sits immediately after an element's name, so it has to know how
+        -- wide that name rendered. GetTextSize measures it without waiting
+        -- for a layout pass, which matters because AbsoluteSize is still
+        -- zero on the frame an element is built in.
+        ------------------------------------------------------------
+
+        local function InfoDot(row, labelInst, text, zindex)
+            if not text or text == "" or not labelInst then return nil end
+
+            local width
+            local ok, measured = pcall(function()
+                return TextService:GetTextSize(
+                    labelInst.Text, labelInst.TextSize, labelInst.Font,
+                    Vector2.new(4096, 64))
+            end)
+            if ok and measured then
+                width = measured.X
+            else
+                width = #labelInst.Text * labelInst.TextSize * 0.52
+            end
+            -- Names longer than this are truncated by the label anyway, so
+            -- following the untruncated width would park the dot on top of
+            -- whatever control sits on the right.
+            width = math.min(width, 190)
+
+            local dot = New("TextButton", {
+                Name                   = "Info",
+                Size                   = UDim2.fromOffset(15, 15),
+                Position               = UDim2.new(
+                    labelInst.Position.X.Scale, labelInst.Position.X.Offset + math.ceil(width) + 7,
+                    labelInst.Position.Y.Scale, labelInst.Position.Y.Offset),
+                AnchorPoint            = Vector2.new(0, labelInst.AnchorPoint.Y),
+                BackgroundTransparency = 1,
+                AutoButtonColor        = false,
+                Text                   = "",
+                ZIndex                 = zindex or 19,
+                Parent                 = row,
+            })
+
+            local glyph = Icons.Render("info", dot, 12, theme.TextDim, (zindex or 19) + 1)
+            glyph.Position    = UDim2.fromScale(0.5, 0.5)
+            glyph.AnchorPoint = Vector2.new(0.5, 0.5)
+
+            dot.MouseEnter:Connect(function() TintIcon(glyph, theme.Accent) end)
+            dot.MouseLeave:Connect(function() TintIcon(glyph, theme.TextDim) end)
+            AttachTooltip(dot, text)
+            return dot
+        end
+
+        ------------------------------------------------------------
+        -- Locking
+        --
+        -- A greyed-out row has to stop responding, not just look dim. The
+        -- scrim handles the look; hiding the interactive children is what
+        -- actually blocks input, since a TextButton keeps receiving clicks
+        -- even with Active off.
+        ------------------------------------------------------------
+
+        local function Lockable(row, api, radius)
+            local scrim = New("Frame", {
+                Name                   = "Lock",
+                Size                   = UDim2.fromScale(1, 1),
+                BackgroundColor3       = theme.Backdrop,
+                BackgroundTransparency = 1,
+                BorderSizePixel        = 0,
+                Visible                = false,
+                ZIndex                 = 30,
+                Parent                 = row,
+            }, { Corner(radius or 11) })
+
+            local stash = nil
+            api.Enabled = true
+
+            api.SetEnabled = function(_, state)
+                state = state ~= false
+                if api.Enabled == state then return end
+                api.Enabled = state
+
+                if not state then
+                    stash = {}
+                    for _, d in ipairs(row:GetDescendants()) do
+                        if d ~= scrim
+                        and (d:IsA("TextButton") or d:IsA("TextBox") or d:IsA("ImageButton")) then
+                            stash[d] = d.Visible
+                            d.Visible = false
+                        end
+                    end
+                    scrim.Visible = true
+                    Tween(scrim, { BackgroundTransparency = 0.45 }, EASE.Snap)
+                else
+                    if stash then
+                        for d, wasVisible in pairs(stash) do
+                            if d.Parent then d.Visible = wasVisible end
+                        end
+                        stash = nil
+                    end
+                    Tween(scrim, { BackgroundTransparency = 1 }, EASE.Snap)
+                    task.delay(0.2, function()
+                        if api.Enabled then scrim.Visible = false end
+                    end)
+                end
+            end
+
+            api.SetLocked = function(_, locked) api:SetEnabled(not locked) end
+            return api
+        end
+
+        -- `Depends = "SomeFlag"` greys the row out whenever that flag is
+        -- false, and `Depends = "!SomeFlag"` inverts it. Saves every hub
+        -- writing the same "if not enabled then return end" in ten
+        -- callbacks and then forgetting to grey the control out.
+        local function BindDepend(api, spec)
+            if not spec or not api.SetEnabled then return end
+            local invert = false
+            local flag = spec
+            if string.sub(spec, 1, 1) == "!" then
+                invert = true
+                flag = string.sub(spec, 2)
+            end
+            Window._dependents[flag] = Window._dependents[flag] or {}
+            table.insert(Window._dependents[flag], { api = api, invert = invert })
+
+            local current = Nely.Flags[flag] and true or false
+            if invert then current = not current end
+            api:SetEnabled(current)
         end
 
         local function Row(height, parent)
@@ -2179,10 +2522,10 @@ function Nely:CreateWindow(opts)
         -- 16px gutters and a 20px gap between title and description. The
         -- previous 14/17 pairing put the two lines close enough that they
         -- read as one block.
-        local function RowText(row, name, description, leftPad)
+        local function RowText(row, name, description, leftPad, info)
             leftPad = leftPad or 16
             local hasDesc = description and description ~= ""
-            New("TextLabel", {
+            local nameLabel = New("TextLabel", {
                 Size                   = UDim2.new(1, -leftPad - 134, 0, 16),
                 Position               = UDim2.new(0, leftPad, 0.5, hasDesc and -11 or 0),
                 AnchorPoint            = Vector2.new(0, 0.5),
@@ -2196,6 +2539,7 @@ function Nely:CreateWindow(opts)
                 ZIndex                 = 18,
                 Parent                 = row,
             })
+            InfoDot(row, nameLabel, info, 19)
             if hasDesc then
                 New("TextLabel", {
                     Size                   = UDim2.new(1, -leftPad - 134, 0, 14),
@@ -2212,6 +2556,242 @@ function Nely:CreateWindow(opts)
                     Parent                 = row,
                 })
             end
+        end
+
+        ------------------------------------------------------------
+        -- Containers: groups and columns
+        --
+        -- Every element constructor below parents straight to `page`, and
+        -- there are two dozen of them. Rather than thread a container
+        -- argument through all of them, Adopt snapshots the page's children,
+        -- runs the constructor, and moves whatever is new into the container.
+        --
+        -- That is deliberately not a ChildAdded hook: with deferred signal
+        -- behaviour, ChildAdded fires at the end of the resumption cycle
+        -- rather than the moment Parent is assigned, so the element would
+        -- already have been handed back to the caller before we saw it.
+        -- Comparing before and after is immune to that.
+        --
+        -- Because the constructors always target `page`, this nests: a group
+        -- built inside a column is adopted by the column, and its own
+        -- children are adopted by the group.
+        ------------------------------------------------------------
+
+        local ELEMENT_METHODS = {
+            "CreateSection", "CreateDivider", "CreateParagraph", "CreateButton",
+            "CreateToggle", "CreateSlider", "CreateInput", "CreateDropdown",
+            "CreateKeybind", "CreateLabel", "CreateSpace", "CreateProgressBar",
+            "CreateColorpicker", "CreateCode", "CreateCurve", "CreateGameGrid",
+            "CreateProfileCard", "CreateServerCard", "CreateFriendsCard",
+            "CreateDiscordCard", "CreateGroup", "CreateColumns",
+        }
+
+        local function Adopt(container, method, ...)
+            local before = {}
+            for _, child in ipairs(page:GetChildren()) do before[child] = true end
+
+            local results = table.pack(method(...))
+
+            for _, child in ipairs(page:GetChildren()) do
+                if not before[child] and child:IsA("GuiObject") then
+                    child.Parent = container
+                end
+            end
+
+            return table.unpack(results, 1, results.n)
+        end
+
+        local function Proxy(container)
+            local proxy = { Instance = container }
+            for _, name in ipairs(ELEMENT_METHODS) do
+                proxy[name] = function(_, ...)
+                    local fn = Tab[name]
+                    if not fn then return nil end
+                    return Adopt(container, fn, Tab, ...)
+                end
+            end
+            proxy.Destroy = function() container:Destroy() end
+            return proxy
+        end
+
+        ------------------------------------------------------------
+        -- Group
+        --
+        -- A titled card that owns its rows. Collapsing is driven by the
+        -- body's AutomaticSize rather than a stored height, so a group whose
+        -- contents grow later still opens to the right size.
+        ------------------------------------------------------------
+
+        function Tab:CreateGroup(cfg)
+            cfg = type(cfg) == "string" and { Title = cfg } or (cfg or {})
+
+            local card = New("Frame", {
+                Name                   = "Group",
+                Size                   = UDim2.new(1, 0, 0, 0),
+                AutomaticSize          = Enum.AutomaticSize.Y,
+                BackgroundColor3       = theme.Surface,
+                BackgroundTransparency = 0.55,
+                BorderSizePixel        = 0,
+                LayoutOrder            = NextOrder(),
+                ClipsDescendants       = true,
+                ZIndex                 = 16,
+                Parent                 = page,
+            }, {
+                Corner(13),
+                Stroke(theme.BorderSoft, 1, 0.5),
+                Pad(10, 10, 10, 10),
+                List(8),
+            })
+            -- The card is a container so search descends into it rather than
+            -- matching the whole group on any one row's text.
+            card:SetAttribute("NelyContainer", true)
+
+            local body
+
+            if cfg.Title then
+                local header = New("Frame", {
+                    Name                   = "GroupHeader",
+                    Size                   = UDim2.new(1, 0, 0, 20),
+                    BackgroundTransparency = 1,
+                    LayoutOrder            = 1,
+                    ZIndex                 = 17,
+                    Parent                 = card,
+                })
+                header:SetAttribute("NelySticky", true)
+
+                local left = 2
+                if cfg.Icon then
+                    local mark = Icons.Render(cfg.Icon, header, 13, theme.Accent, 18)
+                    mark.Position    = UDim2.new(0, 2, 0.5, 0)
+                    mark.AnchorPoint = Vector2.new(0, 0.5)
+                    left = 21
+                end
+
+                local titleLabel = New("TextLabel", {
+                    Size                   = UDim2.new(1, -left - 26, 1, 0),
+                    Position               = UDim2.new(0, left, 0, 0),
+                    BackgroundTransparency = 1,
+                    Text                   = cfg.Title,
+                    TextColor3             = theme.Text,
+                    TextSize               = 13,
+                    Font                   = Enum.Font.GothamBold,
+                    TextXAlignment         = Enum.TextXAlignment.Left,
+                    TextTruncate           = Enum.TextTruncate.AtEnd,
+                    ZIndex                 = 18,
+                    Parent                 = header,
+                })
+                InfoDot(header, titleLabel, cfg.Info, 19)
+
+                if cfg.Collapsible ~= false then
+                    local caret = Icons.Render("chevron", header, 13, theme.TextDim, 18)
+                    caret.Position    = UDim2.new(1, -2, 0.5, 0)
+                    caret.AnchorPoint = Vector2.new(1, 0.5)
+
+                    local hit = New("TextButton", {
+                        Size                   = UDim2.fromScale(1, 1),
+                        BackgroundTransparency = 1,
+                        AutoButtonColor        = false,
+                        Text                   = "",
+                        ZIndex                 = 20,
+                        Parent                 = header,
+                    })
+
+                    local collapsed = cfg.Collapsed == true
+                    local function ApplyCollapse(animate)
+                        Tween(caret, { Rotation = collapsed and -90 or 0 },
+                            animate == false and EASE.Instant or EASE.Glide)
+                        if body then body.Visible = not collapsed end
+                    end
+
+                    hit.MouseEnter:Connect(function() TintIcon(caret, theme.Accent) end)
+                    hit.MouseLeave:Connect(function() TintIcon(caret, theme.TextDim) end)
+                    hit.MouseButton1Click:Connect(function()
+                        collapsed = not collapsed
+                        ApplyCollapse(true)
+                    end)
+
+                    task.defer(function() ApplyCollapse(false) end)
+                end
+            end
+
+            body = New("Frame", {
+                Name                   = "GroupBody",
+                Size                   = UDim2.new(1, 0, 0, 0),
+                AutomaticSize          = Enum.AutomaticSize.Y,
+                BackgroundTransparency = 1,
+                LayoutOrder            = 2,
+                ZIndex                 = 16,
+                Parent                 = card,
+            }, { List(cfg.Gap or 7) })
+            body:SetAttribute("NelyContainer", true)
+
+            local group = Proxy(body)
+            group.Card    = card
+            group.Destroy = function() card:Destroy() end
+            group.SetTitle = function(_, text)
+                local header = card:FindFirstChild("GroupHeader")
+                local lbl = header and header:FindFirstChildOfClass("TextLabel")
+                if lbl then lbl.Text = text end
+            end
+            return group
+        end
+
+        ------------------------------------------------------------
+        -- Columns
+        --
+        -- Splits the page horizontally. Each column is its own container,
+        -- so a settings page can put the switches on the left and the
+        -- graphs on the right instead of running one long ribbon.
+        --
+        -- Falls back to a single column on a compact window: two 130px
+        -- columns are worse than one readable one.
+        ------------------------------------------------------------
+
+        function Tab:CreateColumns(cfg)
+            cfg = type(cfg) == "number" and { Count = cfg } or (cfg or {})
+            local count = math.clamp(cfg.Count or 2, 1, 4)
+            local gap   = cfg.Gap or 10
+            if compact and not cfg.ForceMulti then count = 1 end
+
+            local holder = New("Frame", {
+                Name                   = "Columns",
+                Size                   = UDim2.new(1, 0, 0, 0),
+                AutomaticSize          = Enum.AutomaticSize.Y,
+                BackgroundTransparency = 1,
+                LayoutOrder            = NextOrder(),
+                ZIndex                 = 16,
+                Parent                 = page,
+            }, {
+                New("UIListLayout", {
+                    Padding             = UDim.new(0, gap),
+                    FillDirection       = Enum.FillDirection.Horizontal,
+                    VerticalAlignment   = Enum.VerticalAlignment.Top,
+                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
+                    SortOrder           = Enum.SortOrder.LayoutOrder,
+                }),
+            })
+
+            local columns = {}
+            for index = 1, count do
+                -- Each column loses its share of the gutters, otherwise the
+                -- last one wraps onto a second line the moment gap > 0.
+                local col = New("Frame", {
+                    Name                   = "Column" .. index,
+                    Size                   = UDim2.new(1 / count, -gap * (count - 1) / count, 0, 0),
+                    AutomaticSize          = Enum.AutomaticSize.Y,
+                    BackgroundTransparency = 1,
+                    LayoutOrder            = index,
+                    ZIndex                 = 16,
+                    Parent                 = holder,
+                }, { List(cfg.RowGap or 10) })
+                col:SetAttribute("NelyContainer", true)
+                columns[index] = Proxy(col)
+            end
+
+            columns.Instance = holder
+            columns.Count    = count
+            columns.Destroy  = function() holder:Destroy() end
+            return columns
         end
 
         ------------------------------------------------------------
@@ -2327,7 +2907,7 @@ function Nely:CreateWindow(opts)
         function Tab:CreateButton(cfg)
             cfg = cfg or {}
             local row = Row(cfg.Description and ROW_HD or ROW_H)
-            RowText(row, cfg.Name or "Button", cfg.Description, RowIcon(row, cfg.Icon))
+            RowText(row, cfg.Name or "Button", cfg.Description, RowIcon(row, cfg.Icon), cfg.Info)
 
             local hit = New("TextButton", {
                 Size             = UDim2.fromScale(1, 1),
@@ -2358,7 +2938,10 @@ function Nely:CreateWindow(opts)
                 if cfg.Callback then task.spawn(cfg.Callback) end
             end)
 
-            return { Instance = row, Destroy = function() row:Destroy() end }
+            local api = { Instance = row, Destroy = function() row:Destroy() end }
+            Lockable(row, api)
+            BindDepend(api, cfg.Depends)
+            return api
         end
 
         ------------------------------------------------------------
@@ -2369,7 +2952,7 @@ function Nely:CreateWindow(opts)
             cfg = cfg or {}
             local state = cfg.CurrentValue == true
             local row = Row(cfg.Description and ROW_HD or ROW_H)
-            RowText(row, cfg.Name or "Toggle", cfg.Description, RowIcon(row, cfg.Icon))
+            RowText(row, cfg.Name or "Toggle", cfg.Description, RowIcon(row, cfg.Icon), cfg.Info)
 
             local track = New("Frame", {
                 Size             = UDim2.fromOffset(38, 21),
@@ -2414,7 +2997,12 @@ function Nely:CreateWindow(opts)
                 Tween(track, { BackgroundColor3 = state and theme.Accent or theme.Elevated }, EASE.Snap)
                 Tween(knob, { Position = UDim2.new(0, state and 20 or 3, 0.5, 0) }, EASE.Pop)
                 Tween(tick, { ImageTransparency = state and 0.15 or 1 }, EASE.Snap)
-                if flag then Nely.Flags[flag] = state end
+                if flag then
+                    Nely.Flags[flag] = state
+                    -- anything that declared Depends = "<flag>" greys itself
+                    -- in or out from here
+                    Window:_Sync(flag, state)
+                end
                 api.CurrentValue = state
                 if fire and cfg.Callback then task.spawn(cfg.Callback, state) end
             end
@@ -2430,7 +3018,12 @@ function Nely:CreateWindow(opts)
             api.CurrentValue = state
             api.Set     = function(_, value) Apply(value, true) end
             api.Destroy = function() row:Destroy() end
-            if flag then Nely.Flags[flag] = state end
+            if flag then
+                Nely.Flags[flag] = state
+                task.defer(function() Window:_Sync(flag, state) end)
+            end
+            Lockable(row, api)
+            BindDepend(api, cfg.Depends)
             Window:RegisterElement(flag, api)
             return api
         end
@@ -2446,11 +3039,19 @@ function Nely:CreateWindow(opts)
             local value     = cfg.CurrentValue or range[1]
             local suffix    = cfg.Suffix or ""
 
-            local row = Row(compact and 64 or 70)
+            -- Everything inside a slider is positioned off the bottom of the
+            -- row, so the track and its hit strip follow the row height
+            -- instead of being pinned to the old 70px assumption.
+            local rowH   = dense and (compact and 56 or 60) or (compact and 64 or 70)
+            local titleY = dense and 11 or (compact and 13 or 16)
+            local trackY = rowH - 20
+            local hitY   = trackY - 8
+
+            local row = Row(rowH)
             local lp  = RowIcon(row, cfg.Icon)
-            New("TextLabel", {
+            local sliderLabel = New("TextLabel", {
                 Size                   = UDim2.new(1, -lp - 74, 0, 15),
-                Position               = UDim2.fromOffset(lp, compact and 13 or 16),
+                Position               = UDim2.fromOffset(lp, titleY),
                 BackgroundTransparency = 1,
                 Text                   = cfg.Name or "Slider",
                 TextColor3             = theme.Text,
@@ -2460,6 +3061,7 @@ function Nely:CreateWindow(opts)
                 ZIndex                 = 18,
                 Parent                 = row,
             })
+            InfoDot(row, sliderLabel, cfg.Info, 19)
 
             local readout = New("TextLabel", {
                 Size                   = UDim2.fromOffset(64, 18),
@@ -2477,7 +3079,7 @@ function Nely:CreateWindow(opts)
 
             local track = New("Frame", {
                 Size             = UDim2.new(1, -lp - 16, 0, 5),
-                Position         = UDim2.fromOffset(lp, compact and 44 or 50),
+                Position         = UDim2.fromOffset(lp, trackY),
                 BackgroundColor3 = theme.Elevated,
                 BorderSizePixel  = 0,
                 ZIndex           = 18,
@@ -2530,7 +3132,7 @@ function Nely:CreateWindow(opts)
 
             local hit = New("TextButton", {
                 Size                   = UDim2.new(1, 0, 0, 26),
-                Position               = UDim2.fromOffset(0, compact and 36 or 42),
+                Position               = UDim2.fromOffset(0, hitY),
                 BackgroundTransparency = 1,
                 AutoButtonColor        = false,
                 Text                   = "",
@@ -2577,6 +3179,8 @@ function Nely:CreateWindow(opts)
             end
             api.Destroy = function() row:Destroy() end
             if flag then Nely.Flags[flag] = value end
+            Lockable(row, api)
+            BindDepend(api, cfg.Depends)
             Window:RegisterElement(flag, api)
             return api
         end
@@ -2588,7 +3192,7 @@ function Nely:CreateWindow(opts)
         function Tab:CreateInput(cfg, flag)
             cfg = cfg or {}
             local row = Row(cfg.Description and ROW_HD or ROW_H)
-            RowText(row, cfg.Name or "Input", cfg.Description, RowIcon(row, cfg.Icon))
+            RowText(row, cfg.Name or "Input", cfg.Description, RowIcon(row, cfg.Icon), cfg.Info)
 
             local field = New("Frame", {
                 Size             = UDim2.fromOffset(140, 28),
@@ -2634,6 +3238,8 @@ function Nely:CreateWindow(opts)
                 Set     = function(_, text) box.Text = text end,
                 Destroy = function() row:Destroy() end,
             }
+            Lockable(row, api)
+            BindDepend(api, cfg.Depends)
             Window:RegisterElement(flag, api)
             return api
         end
@@ -2665,7 +3271,7 @@ function Nely:CreateWindow(opts)
 
             local lp = RowIcon(row, cfg.Icon)
 
-            New("TextLabel", {
+            local ddLabel = New("TextLabel", {
                 Size                   = UDim2.new(1, -lp - 144, 0, 16),
                 Position               = UDim2.new(0, lp, 0, math.floor(rowHeight / 2) - 8),
                 BackgroundTransparency = 1,
@@ -2677,6 +3283,7 @@ function Nely:CreateWindow(opts)
                 ZIndex                 = 18,
                 Parent                 = row,
             })
+            InfoDot(row, ddLabel, cfg.Info, 22)
 
             local function SummaryText()
                 local picked = {}
@@ -2824,6 +3431,8 @@ function Nely:CreateWindow(opts)
                 end,
                 Destroy = function() row:Destroy() end,
             }
+            Lockable(row, api)
+            BindDepend(api, cfg.Depends)
             Window:RegisterElement(flag, api)
             return api
         end
@@ -2832,13 +3441,33 @@ function Nely:CreateWindow(opts)
         -- Keybind
         ------------------------------------------------------------
 
+        -- Mode decides what the key actually does, and the chip in front of
+        -- the key shows which one is live:
+        --
+        --   Press   fires the callback once per press          (the default,
+        --           and what every existing script already expects)
+        --   Hold    fires Callback(true) down, Callback(false) up
+        --   Toggle  flips a state and fires Callback(state)
+        --
+        -- Clicking the chip cycles it, so a hub gets all three without
+        -- shipping three separate controls.
+        local KEYBIND_MODES = { "Press", "Hold", "Toggle" }
+
         function Tab:CreateKeybind(cfg, flag)
             cfg = cfg or {}
-            local current = cfg.CurrentBind or "None"
+            local current   = cfg.CurrentBind or "None"
             local listening = false
+            local held      = false
+            local toggled   = false
+
+            local modeIndex = 1
+            for index, name in ipairs(KEYBIND_MODES) do
+                if cfg.Mode == name then modeIndex = index end
+            end
+            local locked = cfg.LockMode == true
 
             local row = Row(cfg.Description and ROW_HD or ROW_H)
-            RowText(row, cfg.Name or "Keybind", cfg.Description, RowIcon(row, cfg.Icon))
+            RowText(row, cfg.Name or "Keybind", cfg.Description, RowIcon(row, cfg.Icon), cfg.Info)
 
             local pill = New("TextButton", {
                 Size             = UDim2.fromOffset(84, 27),
@@ -2853,6 +3482,44 @@ function Nely:CreateWindow(opts)
                 ZIndex           = 19,
                 Parent           = row,
             }, { Corner(8), Stroke(theme.Border, 1, 0.55) })
+
+            -- Sits flush against the key pill so the pair reads as one
+            -- control: [ HOLD ][ E ]
+            local chip = New("TextButton", {
+                Size             = UDim2.fromOffset(52, 27),
+                Position         = UDim2.new(1, -100, 0.5, 0),
+                AnchorPoint      = Vector2.new(1, 0.5),
+                BackgroundColor3 = theme.Elevated,
+                BackgroundTransparency = 0.45,
+                AutoButtonColor  = false,
+                Text             = string.upper(KEYBIND_MODES[modeIndex]),
+                TextColor3       = theme.TextDim,
+                TextSize         = 9,
+                Font             = Enum.Font.GothamBold,
+                ZIndex           = 19,
+                Parent           = row,
+            }, { Corner(8) })
+
+            AttachTooltip(chip, locked and "Trigger mode" or "Click to change trigger mode")
+
+            local function SetMode(index)
+                modeIndex = ((index - 1) % #KEYBIND_MODES) + 1
+                chip.Text = string.upper(KEYBIND_MODES[modeIndex])
+                held, toggled = false, false
+                if cfg.OnModeChanged then
+                    task.spawn(cfg.OnModeChanged, KEYBIND_MODES[modeIndex])
+                end
+            end
+
+            if not locked then
+                chip.MouseEnter:Connect(function()
+                    Tween(chip, { BackgroundTransparency = 0.15, TextColor3 = theme.Text }, EASE.Snap)
+                end)
+                chip.MouseLeave:Connect(function()
+                    Tween(chip, { BackgroundTransparency = 0.45, TextColor3 = theme.TextDim }, EASE.Snap)
+                end)
+                chip.MouseButton1Click:Connect(function() SetMode(modeIndex + 1) end)
+            end
 
             pill.MouseButton1Click:Connect(function()
                 listening = true
@@ -2874,17 +3541,43 @@ function Nely:CreateWindow(opts)
 
             local fireConn = UserInputService.InputBegan:Connect(function(input, processed)
                 if listening or processed then return end
-                if input.KeyCode.Name == current and cfg.Callback then
-                    task.spawn(cfg.Callback)
+                if input.KeyCode.Name ~= current then return end
+                local mode = KEYBIND_MODES[modeIndex]
+                if mode == "Hold" then
+                    if held then return end
+                    held = true
+                    if cfg.Callback then task.spawn(cfg.Callback, true) end
+                elseif mode == "Toggle" then
+                    toggled = not toggled
+                    if cfg.Callback then task.spawn(cfg.Callback, toggled) end
+                else
+                    if cfg.Callback then task.spawn(cfg.Callback) end
                 end
             end)
             table.insert(Nely.Connections, fireConn)
 
+            local releaseConn = UserInputService.InputEnded:Connect(function(input, processed)
+                if input.KeyCode.Name ~= current then return end
+                if KEYBIND_MODES[modeIndex] ~= "Hold" or not held then return end
+                held = false
+                if cfg.Callback then task.spawn(cfg.Callback, false) end
+            end)
+            table.insert(Nely.Connections, releaseConn)
+
             local api = {
                 CurrentBind = current,
+                Mode        = KEYBIND_MODES[modeIndex],
                 Set = function(_, key) current = key; pill.Text = key end,
+                SetMode = function(_, name)
+                    for index, candidate in ipairs(KEYBIND_MODES) do
+                        if candidate == name then SetMode(index) end
+                    end
+                    api.Mode = KEYBIND_MODES[modeIndex]
+                end,
                 Destroy = function() row:Destroy() end,
             }
+            Lockable(row, api)
+            BindDepend(api, cfg.Depends)
             Window:RegisterElement(flag, api)
             return api
         end
@@ -3040,7 +3733,7 @@ function Nely:CreateWindow(opts)
 
             local lp = RowIcon(row, cfg.Icon)
 
-            New("TextLabel", {
+            local cpLabel = New("TextLabel", {
                 Size                   = UDim2.new(1, -lp - 74, 0, 16),
                 Position               = UDim2.new(0, lp, 0, math.floor(rowHeight / 2) - 8),
                 BackgroundTransparency = 1,
@@ -3052,6 +3745,7 @@ function Nely:CreateWindow(opts)
                 ZIndex                 = 18,
                 Parent                 = row,
             })
+            InfoDot(row, cpLabel, cfg.Info, 22)
 
             local swatch = New("Frame", {
                 Size             = UDim2.fromOffset(38, 22),
@@ -3228,6 +3922,299 @@ function Nely:CreateWindow(opts)
             end
             api.Destroy = function() row:Destroy() end
             if flag then Nely.Flags[flag] = current end
+            Lockable(row, api)
+            BindDepend(api, cfg.Depends)
+            Window:RegisterElement(flag, api)
+            return api
+        end
+
+        ------------------------------------------------------------
+        -- Curve editor
+        --
+        -- A draggable cubic bezier, for anything shaped like an easing
+        -- response: aim smoothing, sensitivity ramps, fade profiles. The
+        -- ends are pinned at (0,0) and (1,1); the two handles in between
+        -- are what you drag.
+        --
+        -- There is no line primitive in Roblox GUI, so the curve is drawn
+        -- as a run of thin rotated Frames sampled along the bezier. 34
+        -- segments is the point where the joins stop being visible at this
+        -- size without wasting instances.
+        --
+        -- :Sample(x) is the part a hub actually calls at runtime. A bezier
+        -- is parametric, so x is not t; solving for t by bisection is
+        -- cheap here and avoids the lookup table a shipping easing curve
+        -- would otherwise need.
+        ------------------------------------------------------------
+
+        local CURVE_SEGMENTS = 34
+
+        function Tab:CreateCurve(cfg, flag)
+            cfg = cfg or {}
+            local p1x = math.clamp(cfg.P1X or 0.25, 0, 1)
+            local p1y = math.clamp(cfg.P1Y or 0.10, -0.5, 1.5)
+            local p2x = math.clamp(cfg.P2X or 0.75, 0, 1)
+            local p2y = math.clamp(cfg.P2Y or 0.90, -0.5, 1.5)
+
+            local graphH = cfg.Height or 132
+
+            local row = New("Frame", {
+                Size                   = UDim2.new(1, 0, 0, graphH + 62),
+                BackgroundColor3       = theme.Surface,
+                BackgroundTransparency = 0.25,
+                BorderSizePixel        = 0,
+                LayoutOrder            = NextOrder(),
+                ClipsDescendants       = true,
+                ZIndex                 = 17,
+                Parent                 = page,
+            }, { Corner(11), Stroke(theme.BorderSoft, 1, 0.45) })
+
+            local lp = RowIcon(row, cfg.Icon)
+
+            local curveLabel = New("TextLabel", {
+                Size                   = UDim2.new(1, -lp - 20, 0, 16),
+                Position               = UDim2.fromOffset(lp, 13),
+                BackgroundTransparency = 1,
+                Text                   = cfg.Name or "Curve",
+                TextColor3             = theme.Text,
+                TextSize               = 13,
+                Font                   = Enum.Font.GothamMedium,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                ZIndex                 = 18,
+                Parent                 = row,
+            })
+            InfoDot(row, curveLabel, cfg.Info, 19)
+
+            local graph = New("Frame", {
+                Name             = "Graph",
+                Size             = UDim2.new(1, -28, 0, graphH),
+                Position         = UDim2.fromOffset(14, 38),
+                BackgroundColor3 = theme.Backdrop,
+                BackgroundTransparency = 0.25,
+                BorderSizePixel  = 0,
+                ClipsDescendants = true,
+                ZIndex           = 18,
+                Parent           = row,
+            }, { Corner(9), Stroke(theme.BorderSoft, 1, 0.6) })
+
+            -- grid
+            for i = 1, 5 do
+                local t = i / 6
+                New("Frame", {
+                    Size             = UDim2.new(1, 0, 0, 1),
+                    Position         = UDim2.fromScale(0, t),
+                    BackgroundColor3 = theme.BorderSoft,
+                    BackgroundTransparency = 0.45,
+                    BorderSizePixel  = 0,
+                    ZIndex           = 19,
+                    Parent           = graph,
+                })
+                New("Frame", {
+                    Size             = UDim2.new(0, 1, 1, 0),
+                    Position         = UDim2.fromScale(t, 0),
+                    BackgroundColor3 = theme.BorderSoft,
+                    BackgroundTransparency = 0.45,
+                    BorderSizePixel  = 0,
+                    ZIndex           = 19,
+                    Parent           = graph,
+                })
+            end
+
+            local segments = {}
+            for i = 1, CURVE_SEGMENTS do
+                segments[i] = New("Frame", {
+                    Size             = UDim2.fromOffset(2, 2),
+                    AnchorPoint      = Vector2.new(0.5, 0.5),
+                    BackgroundColor3 = theme.Accent,
+                    BorderSizePixel  = 0,
+                    ZIndex           = 21,
+                    Parent           = graph,
+                }, { Corner(1) })
+            end
+
+            -- guide lines from each pinned end out to its handle
+            local guides = {}
+            for i = 1, 2 do
+                guides[i] = New("Frame", {
+                    Size             = UDim2.fromOffset(1, 1),
+                    AnchorPoint      = Vector2.new(0.5, 0.5),
+                    BackgroundColor3 = theme.TextDim,
+                    BackgroundTransparency = 0.55,
+                    BorderSizePixel  = 0,
+                    ZIndex           = 20,
+                    Parent           = graph,
+                })
+            end
+
+            local function Anchor(x, y, colour)
+                return New("Frame", {
+                    Size             = UDim2.fromOffset(7, 7),
+                    Position         = UDim2.fromScale(x, 1 - y),
+                    AnchorPoint      = Vector2.new(0.5, 0.5),
+                    BackgroundColor3 = colour,
+                    BorderSizePixel  = 0,
+                    ZIndex           = 22,
+                    Parent           = graph,
+                }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+            end
+
+            Anchor(0, 0, theme.TextDim)
+            Anchor(1, 1, theme.TextDim)
+
+            local function Handle(x, y)
+                return New("Frame", {
+                    Size             = UDim2.fromOffset(11, 11),
+                    Position         = UDim2.fromScale(x, 1 - y),
+                    AnchorPoint      = Vector2.new(0.5, 0.5),
+                    BackgroundColor3 = theme.AccentSoft,
+                    BorderSizePixel  = 0,
+                    ZIndex           = 23,
+                    Parent           = graph,
+                }, {
+                    New("UICorner", { CornerRadius = UDim.new(1, 0) }),
+                    New("UIStroke", { Color = theme.Backdrop, Thickness = 2, Transparency = 0.2 }),
+                })
+            end
+
+            local h1 = Handle(p1x, p1y)
+            local h2 = Handle(p2x, p2y)
+
+            local readout = New("TextLabel", {
+                Size                   = UDim2.new(1, -28, 0, 14),
+                Position               = UDim2.fromOffset(14, graphH + 42),
+                BackgroundTransparency = 1,
+                Text                   = "",
+                TextColor3             = theme.TextDim,
+                TextSize               = 10,
+                Font                   = Enum.Font.Code,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                ZIndex                 = 18,
+                Parent                 = row,
+            })
+
+            local api = {}
+
+            local function BezierAt(t)
+                local u = 1 - t
+                local x = 3 * u * u * t * p1x + 3 * u * t * t * p2x + t * t * t
+                local y = 3 * u * u * t * p1y + 3 * u * t * t * p2y + t * t * t
+                return x, y
+            end
+
+            -- Lays one thin frame between two points in the graph's pixel
+            -- space: midpoint, length, and the angle between them.
+            local function Segment(frame, ax, ay, bx, by, thickness)
+                local dx, dy = bx - ax, by - ay
+                local length = math.sqrt(dx * dx + dy * dy)
+                frame.Position = UDim2.fromOffset((ax + bx) / 2, (ay + by) / 2)
+                frame.Size     = UDim2.fromOffset(math.max(length, 1), thickness or 2)
+                frame.Rotation = math.deg(math.atan2(dy, dx))
+            end
+
+            local function Redraw()
+                local size = graph.AbsoluteSize
+                if size.X < 2 then return end
+
+                local prevX, prevY = 0, size.Y
+                for i = 1, CURVE_SEGMENTS do
+                    local t = i / CURVE_SEGMENTS
+                    local bx, by = BezierAt(t)
+                    local px = bx * size.X
+                    local py = (1 - by) * size.Y
+                    Segment(segments[i], prevX, prevY, px, py, 2)
+                    segments[i].BackgroundColor3 = theme.Accent
+                    prevX, prevY = px, py
+                end
+
+                Segment(guides[1], 0, size.Y, p1x * size.X, (1 - p1y) * size.Y, 1)
+                Segment(guides[2], size.X, 0, p2x * size.X, (1 - p2y) * size.Y, 1)
+
+                h1.Position = UDim2.fromScale(p1x, 1 - p1y)
+                h2.Position = UDim2.fromScale(p2x, 1 - p2y)
+
+                readout.Text = ("P1 %.2f, %.2f      P2 %.2f, %.2f")
+                    :format(p1x, p1y, p2x, p2y)
+
+                api.CurrentValue = { p1x, p1y, p2x, p2y }
+                if flag then Nely.Flags[flag] = api.CurrentValue end
+            end
+
+            local dragging = nil
+
+            local function HandleHit(target, which)
+                local hit = New("TextButton", {
+                    Size                   = UDim2.fromOffset(26, 26),
+                    Position               = UDim2.fromScale(0.5, 0.5),
+                    AnchorPoint            = Vector2.new(0.5, 0.5),
+                    BackgroundTransparency = 1,
+                    AutoButtonColor        = false,
+                    Text                   = "",
+                    ZIndex                 = 24,
+                    Parent                 = target,
+                })
+                hit.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1
+                    or input.UserInputType == Enum.UserInputType.Touch then
+                        dragging = which
+                        Tween(target, { Size = UDim2.fromOffset(14, 14) }, EASE.Pop)
+                    end
+                end)
+                return hit
+            end
+
+            HandleHit(h1, 1)
+            HandleHit(h2, 2)
+
+            local moveConn = RunService.RenderStepped:Connect(function()
+                if not dragging then return end
+                local point = GetPointer()
+                local pos, size = graph.AbsolutePosition, graph.AbsoluteSize
+                local nx = math.clamp((point.X - pos.X) / math.max(size.X, 1), 0, 1)
+                local ny = 1 - math.clamp((point.Y - pos.Y) / math.max(size.Y, 1), 0, 1)
+                if dragging == 1 then p1x, p1y = nx, ny else p2x, p2y = nx, ny end
+                Redraw()
+                if cfg.Callback then task.spawn(cfg.Callback, p1x, p1y, p2x, p2y) end
+            end)
+            table.insert(Nely.Connections, moveConn)
+
+            local dropConn = UserInputService.InputEnded:Connect(function(input)
+                if input.UserInputType ~= Enum.UserInputType.MouseButton1
+               and input.UserInputType ~= Enum.UserInputType.Touch then return end
+                if not dragging then return end
+                Tween(dragging == 1 and h1 or h2, { Size = UDim2.fromOffset(11, 11) }, EASE.Pop)
+                dragging = nil
+            end)
+            table.insert(Nely.Connections, dropConn)
+
+            -- AbsoluteSize is zero until the page has laid out, and the
+            -- curve is drawn in pixel space, so the first paint waits for it.
+            graph:GetPropertyChangedSignal("AbsoluteSize"):Connect(Redraw)
+            task.defer(Redraw)
+
+            api.CurrentValue = { p1x, p1y, p2x, p2y }
+
+            function api.Sample(_, x)
+                x = math.clamp(x or 0, 0, 1)
+                local low, high = 0, 1
+                for _ = 1, 18 do
+                    local mid = (low + high) / 2
+                    local bx = select(1, BezierAt(mid))
+                    if bx < x then low = mid else high = mid end
+                end
+                return select(2, BezierAt((low + high) / 2))
+            end
+
+            api.Set = function(_, a, b, c, d)
+                if type(a) == "table" then a, b, c, d = a[1], a[2], a[3], a[4] end
+                p1x, p1y = math.clamp(a or p1x, 0, 1), b or p1y
+                p2x, p2y = math.clamp(c or p2x, 0, 1), d or p2y
+                Redraw()
+                if cfg.Callback then task.spawn(cfg.Callback, p1x, p1y, p2x, p2y) end
+            end
+
+            api.Destroy = function() row:Destroy() end
+            Lockable(row, api)
+            BindDepend(api, cfg.Depends)
             Window:RegisterElement(flag, api)
             return api
         end
@@ -4299,40 +5286,59 @@ function Nely:CreateWindow(opts)
     ----------------------------------------------------------------
 
     if opts.SearchBar ~= false then
-        local searchWrap = New("Frame", {
-            Name                   = "WindowSearch",
-            Size                   = UDim2.new(1, -16, 0, 28),
-            Position               = UDim2.fromOffset(8, 8),
-            BackgroundColor3       = theme.Surface,
-            BackgroundTransparency = 0.25,
-            BorderSizePixel        = 0,
-            ZIndex                 = 17,
-            Parent                 = sidebar,
-        }, { Corner(8), Stroke(theme.BorderSoft, 1, 0.5) })
+        -- SearchBar = "topbar" floats the field across the top of the window
+        -- instead of stacking it above the tab list. It needs real width to
+        -- look deliberate, so on a phone-sized window it falls back to the
+        -- sidebar rather than colliding with the title and the controls.
+        local inTopbar = (opts.SearchBar == "topbar") and not compact
 
-        local sIcon = Icons.Render("search", searchWrap, 12, theme.TextDim, 18)
-        sIcon.Position    = UDim2.new(0, 9, 0.5, 0)
+        local wrap = New("Frame", {
+            Name                   = "WindowSearch",
+            Size                   = inTopbar and UDim2.fromOffset(268, 30)
+                                              or  UDim2.new(1, -16, 0, 28),
+            Position               = inTopbar and UDim2.new(0.5, 26, 0.5, 0)
+                                              or  UDim2.fromOffset(8, 8),
+            AnchorPoint            = inTopbar and Vector2.new(0.5, 0.5) or Vector2.new(0, 0),
+            BackgroundColor3       = inTopbar and theme.Backdrop or theme.Surface,
+            BackgroundTransparency = inTopbar and 0.15 or 0.25,
+            BorderSizePixel        = 0,
+            ZIndex                 = inTopbar and 21 or 17,
+            Parent                 = inTopbar and topbar or sidebar,
+        }, { Corner(inTopbar and 9 or 8), Stroke(theme.BorderSoft, 1, 0.5) })
+
+        local sIcon = Icons.Render("search", wrap, inTopbar and 14 or 12,
+            theme.TextDim, (inTopbar and 22 or 18))
+        sIcon.Position    = UDim2.new(0, inTopbar and 11 or 9, 0.5, 0)
         sIcon.AnchorPoint = Vector2.new(0, 0.5)
 
         local sBox = New("TextBox", {
-            Size                   = UDim2.new(1, -32, 1, 0),
-            Position               = UDim2.fromOffset(26, 0),
+            Size                   = UDim2.new(1, inTopbar and -40 or -32, 1, 0),
+            Position               = UDim2.fromOffset(inTopbar and 32 or 26, 0),
             BackgroundTransparency = 1,
             Text                   = "",
-            PlaceholderText        = "Search",
+            PlaceholderText        = inTopbar and "Search functions" or "Search",
             PlaceholderColor3      = theme.TextDim,
             TextColor3             = theme.Text,
-            TextSize               = 12,
+            TextSize               = inTopbar and 13 or 12,
             Font                   = Enum.Font.Gotham,
             TextXAlignment         = Enum.TextXAlignment.Left,
             ClearTextOnFocus       = false,
-            ZIndex                 = 18,
-            Parent                 = searchWrap,
+            ZIndex                 = inTopbar and 23 or 18,
+            Parent                 = wrap,
         })
 
-        -- push the tab list down to make room
-        tabList.Size     = UDim2.new(1, -14, 1, -58)
-        tabList.Position = UDim2.fromOffset(7, 46)
+        if inTopbar then
+            -- Nothing was stacked above the tab list, so it keeps its full
+            -- height, and the rail has no sidebar box to hide: searchWrap
+            -- stays nil so ApplyRail leaves the tab list alone.
+            tabList.Size     = UDim2.new(1, -14, 1, -20)
+            tabList.Position = UDim2.fromOffset(7, 10)
+        else
+            searchWrap = wrap
+            -- push the tab list down to make room
+            tabList.Size     = UDim2.new(1, -14, 1, -58)
+            tabList.Position = UDim2.fromOffset(7, 46)
+        end
 
         local function RowText(row)
             local parts = {}
@@ -4344,23 +5350,45 @@ function Nely:CreateWindow(opts)
             return string.lower(table.concat(parts, " "))
         end
 
-        sBox:GetPropertyChangedSignal("Text"):Connect(function()
-            local query = string.lower(sBox.Text)
-
-            for _, tab in ipairs(Window.Tabs) do
-                for _, row in ipairs(tab.Page:GetChildren()) do
-                    if row:IsA("GuiObject") then
-                        if query == "" then
-                            row.Visible = true
-                        else
-                            row.Visible = string.find(RowText(row), query, 1, true) ~= nil
-                        end
+        -- Groups and columns nest their rows, so a flat pass over the page's
+        -- direct children would only ever match the container. Filter walks
+        -- into anything tagged as a container and reports back whether it
+        -- kept anything, so an empty group hides itself instead of leaving a
+        -- titled card with nothing under it.
+        local function Filter(host, query)
+            local kept = false
+            for _, child in ipairs(host:GetChildren()) do
+                if child:IsA("GuiObject") then
+                    if child:GetAttribute("NelySticky") then
+                        -- A group's own header. It rides along with whatever
+                        -- survives inside the group and never counts as a
+                        -- match itself, otherwise typing a group's title
+                        -- would leave a titled card with nothing under it.
+                        child.Visible = true
+                    elseif child:GetAttribute("NelyContainer") then
+                        local inner = Filter(child, query)
+                        child.Visible = inner
+                        kept = kept or inner
+                    else
+                        local match = query == ""
+                            or string.find(RowText(child), query, 1, true) ~= nil
+                        child.Visible = match
+                        kept = kept or match
                     end
                 end
             end
+            if query == "" then return true end
+            return kept
+        end
+
+        sBox:GetPropertyChangedSignal("Text"):Connect(function()
+            local query = string.lower(sBox.Text)
+            for _, tab in ipairs(Window.Tabs) do
+                Filter(tab.Page, query)
+            end
         end)
 
-        local sStroke = searchWrap:FindFirstChildOfClass("UIStroke")
+        local sStroke = wrap:FindFirstChildOfClass("UIStroke")
         sBox.Focused:Connect(function()
             Tween(sStroke, { Color = theme.Accent, Transparency = 0.2 }, EASE.Snap)
             TintIcon(sIcon, theme.Accent)
