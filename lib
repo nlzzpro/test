@@ -2164,7 +2164,9 @@ function Nely:CreateWindow(opts)
             Tween(playerCard, { BackgroundTransparency = 0.45 }, EASE.Snap)
         end)
         playerCard.MouseButton1Click:Connect(function()
-            Ripple(playerCard, 46)
+            -- ZIndex 17, so the ripple sweeps behind the avatar and the
+            -- name labels (18) instead of washing over them.
+            Ripple(playerCard, 17)
             local copy = setclipboard or toclipboard or (syn and syn.write_clipboard)
             if copy and me then
                 copy(me.Name)
