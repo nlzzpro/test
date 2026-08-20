@@ -6,7 +6,7 @@
 ]]
 
 local Nely = {}
-Nely.Version   = "3.1.0"
+Nely.Version   = "3.2.0"
 Nely.Flags     = {}
 Nely.Connections = {}
 Nely.Unloaded  = false
@@ -1331,6 +1331,159 @@ local function BrandMark(parent, title, logo, textSize, radius, zindex)
 end
 
 --==================================================================
+--  WATERMARK
+--
+--  A small always-on-top strip: your label, then live FPS, ping and
+--  clock. Drag it anywhere. It is independent of the window, so it
+--  stays put while the hub is minimised — which is the point, since
+--  that is when you actually want to see your framerate.
+--
+--  FPS is a one-second rolling count rather than 1/DeltaTime, which
+--  jitters far too much to read. Ping comes from Stats and is only
+--  polled every second; it is a server round trip, not a per-frame
+--  number, so sampling it faster just burns CPU.
+--==================================================================
+
+function Nely:Watermark(opts)
+    opts = opts or {}
+    local theme = Nely.Theme or Nely.Themes.Cobalt
+
+    if Nely._watermark then Nely._watermark:Destroy() end
+
+    local pill = New("Frame", {
+        Name                   = "Watermark",
+        Size                   = UDim2.fromOffset(0, 30),
+        Position               = opts.Position or UDim2.fromOffset(18, 18),
+        AutomaticSize          = Enum.AutomaticSize.X,
+        BackgroundColor3       = theme.Surface,
+        BackgroundTransparency = 0.1,
+        BorderSizePixel        = 0,
+        ZIndex                 = 800,
+        Parent                 = Root,
+    }, { Corner(9), Stroke(theme.BorderSoft, 1, 0.35) })
+
+    Shadow(pill, 22, 0.75)
+
+    -- Accent bar down the left edge.
+    New("Frame", {
+        Size             = UDim2.new(0, 2, 1, -12),
+        Position         = UDim2.new(0, 0, 0.5, 0),
+        AnchorPoint      = Vector2.new(0, 0.5),
+        BackgroundColor3 = theme.Accent,
+        BorderSizePixel  = 0,
+        ZIndex           = 801,
+        Parent           = pill,
+    }, { Corner(2) })
+
+    -- The cells live in their own row rather than straight on the pill: a
+    -- UIListLayout positions every GuiObject child it can see, and on the
+    -- pill that would have included the drop shadow and the accent bar.
+    local row = New("Frame", {
+        Name                   = "Row",
+        Size                   = UDim2.fromOffset(0, 30),
+        Position               = UDim2.fromOffset(12, 0),
+        AutomaticSize          = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1,
+        ZIndex                 = 801,
+        Parent                 = pill,
+    }, {
+        Pad(0, 0, 0, 12),
+        New("UIListLayout", {
+            Padding           = UDim.new(0, 9),
+            FillDirection     = Enum.FillDirection.Horizontal,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            SortOrder         = Enum.SortOrder.LayoutOrder,
+        }),
+    })
+
+    local order = 0
+    local function Cell(text, color, font, size)
+        order = order + 1
+        return New("TextLabel", {
+            Size                   = UDim2.fromOffset(0, 30),
+            AutomaticSize          = Enum.AutomaticSize.X,
+            BackgroundTransparency = 1,
+            Text                   = text,
+            TextColor3             = color,
+            TextSize               = size or 12,
+            Font                   = font or Enum.Font.GothamMedium,
+            LayoutOrder            = order,
+            ZIndex                 = 802,
+            Parent                 = row,
+        })
+    end
+
+    local function Sep()
+        order = order + 1
+        New("Frame", {
+            Size             = UDim2.fromOffset(1, 12),
+            BackgroundColor3 = theme.Border,
+            BackgroundTransparency = 0.4,
+            BorderSizePixel  = 0,
+            LayoutOrder      = order,
+            ZIndex           = 802,
+            Parent           = row,
+        })
+    end
+
+    local label = Cell(opts.Text or "Nely", theme.Text, Enum.Font.GothamBold, 13)
+    Sep()
+    local fpsCell  = opts.ShowFPS  ~= false and Cell("-- fps", theme.TextSub, Enum.Font.Code) or nil
+    local pingCell = opts.ShowPing ~= false and Cell("-- ms",  theme.TextSub, Enum.Font.Code) or nil
+    local timeCell = opts.ShowTime ~= false and Cell("--:--",  theme.TextDim, Enum.Font.Code) or nil
+
+    Draggable(pill, pill)
+
+    local frames, window, conn = 0, 0, nil
+
+    conn = RunService.RenderStepped:Connect(function(dt)
+        frames = frames + 1
+        window = window + dt
+
+        if window >= 1 then
+            if fpsCell then
+                fpsCell.Text = string.format("%d fps", math.floor(frames / window + 0.5))
+            end
+            frames, window = 0, 0
+
+            if pingCell then
+                local ok, ms = pcall(function()
+                    return game:GetService("Stats").Network
+                        .ServerStatsItem["Data Ping"]:GetValue()
+                end)
+                pingCell.Text = ok and string.format("%d ms", math.floor(ms)) or "-- ms"
+            end
+            if timeCell then
+                timeCell.Text = os.date("%H:%M")
+            end
+        end
+    end)
+
+    local api = { Instance = pill }
+
+    function api:SetText(text) label.Text = text end
+
+    function api:SetEnabled(state)
+        pill.Visible = state and true or false
+    end
+
+    function api:Destroy()
+        if conn then conn:Disconnect() end
+        pill:Destroy()
+        if Nely._watermark == api then Nely._watermark = nil end
+    end
+
+    if opts.Enabled == false then pill.Visible = false end
+
+    -- Registered so Window:Destroy tears the render loop down with
+    -- everything else, rather than leaving it ticking on a dead frame.
+    table.insert(Nely.Connections, conn)
+
+    Nely._watermark = api
+    return api
+end
+
+--==================================================================
 --  WINDOW
 --==================================================================
 
@@ -1539,16 +1692,28 @@ function Nely:CreateWindow(opts)
     -- the script is running in. The name comes from MarketplaceService
     -- and the thumbnail from the same universe resolver the game grid
     -- uses, so this costs one lookup that is already cached.
+    --
+    -- It lives on the LEFT, immediately after the title, separated by a
+    -- hairline. That is where the free width is: the right-hand side has
+    -- to share with the credit pill and three window controls, which is
+    -- what was squeezing long place names down to an ellipsis.
+    -- GameBadge = "right" puts it back beside the credit.
     ----------------------------------------------------------------
 
-    -- Right rail: game badge, then the credit pill, laid out on one line and
-    -- right-aligned so neither has to know how wide the other is. They used
-    -- to be positioned independently, which is why the badge ended up under
-    -- the title instead of beside the credit.
+    -- CONTROLS_W has to clear every window control. Three 28px buttons at
+    -- -14 / -48 / -82 means the leftmost one ends at -110, so anything that
+    -- starts at -88 lands underneath the rail button. That was the credit
+    -- pill sitting on top of the collapse button.
+    local CONTROLS_W  = 122
+    local badgeOnLeft = opts.GameBadge ~= "right"
+
+    -- Right rail: the credit pill, and the game badge too when it has been
+    -- sent back over here. Laid out on one line and right-aligned so neither
+    -- has to know how wide the other is.
     local topbarRight = New("Frame", {
         Name                   = "TopbarRight",
         Size                   = UDim2.fromOffset(0, 24),
-        Position               = UDim2.new(1, -88, 0.5, 0),
+        Position               = UDim2.new(1, -CONTROLS_W, 0.5, 0),
         AnchorPoint            = Vector2.new(1, 0.5),
         AutomaticSize          = Enum.AutomaticSize.X,
         BackgroundTransparency = 1,
@@ -1564,10 +1729,45 @@ function Nely:CreateWindow(opts)
         }),
     })
 
+    -- Forward declarations: the badge measures itself against whatever else
+    -- ends up on the topbar, and both of those are built further down.
+    local creditPill
+    local topbarSearch
+    local FitGameBadge = function() end
+
+    -- Where the title block ends, so the badge and the divider know where
+    -- to start. Measured rather than guessed, because the fixed 220px title
+    -- label is a container, not the width of the text inside it.
+    local function TitleBlockEnd()
+        local titleW = TextService:GetTextSize(
+            title, 15, Enum.Font.GothamBold, Vector2.new(9999, 40)).X
+        local subW = subtitle ~= "" and TextService:GetTextSize(
+            subtitle, 11, Enum.Font.Gotham, Vector2.new(9999, 40)).X or 0
+        return 52 + math.max(titleW, subW)
+    end
+
     if opts.ShowGame ~= false then
+        local divider
+        if badgeOnLeft then
+            divider = New("Frame", {
+                Name             = "TopbarDivider",
+                Size             = UDim2.fromOffset(1, 20),
+                Position         = UDim2.new(0, TitleBlockEnd() + 16, 0.5, 0),
+                AnchorPoint      = Vector2.new(0, 0.5),
+                BackgroundColor3 = theme.BorderSoft,
+                BorderSizePixel  = 0,
+                Visible          = false,
+                ZIndex           = 21,
+                Parent           = topbar,
+            })
+        end
+
         local badge = New("Frame", {
             Name                   = "GameBadge",
             Size                   = UDim2.fromOffset(0, 24),
+            Position               = badgeOnLeft
+                and UDim2.new(0, TitleBlockEnd() + 33, 0.5, 0) or nil,
+            AnchorPoint            = badgeOnLeft and Vector2.new(0, 0.5) or nil,
             AutomaticSize          = Enum.AutomaticSize.X,
             BackgroundColor3       = theme.Elevated,
             BackgroundTransparency = 0.3,
@@ -1575,7 +1775,7 @@ function Nely:CreateWindow(opts)
             Visible                = false,
             LayoutOrder            = 1,
             ZIndex                 = 21,
-            Parent                 = topbarRight,
+            Parent                 = badgeOnLeft and topbar or topbarRight,
         }, { Corner(7), Stroke(theme.BorderSoft, 1, 0.5), Pad(0, 0, 5, 9) })
 
         local thumb = New("ImageLabel", {
@@ -1606,6 +1806,98 @@ function Nely:CreateWindow(opts)
 
         Window.GameBadge = badge
 
+        ------------------------------------------------------------
+        -- Fitting the place name
+        --
+        -- This used to cut at a fixed character count, which is why a
+        -- long game name came out as three dots however much room the
+        -- window actually had. Now it measures: everything else on the
+        -- topbar reports its own width, the badge takes what is left,
+        -- and it only ellipsises when the text genuinely does not fit.
+        -- Recomputed whenever the window is resized.
+        ------------------------------------------------------------
+
+        local fullName   = ""
+        local lastFitted = nil
+
+        local function Measure(text, size, font)
+            return TextService:GetTextSize(
+                text, size, font, Vector2.new(9999, 40)
+            ).X
+        end
+
+        FitGameBadge = function()
+            if fullName == "" then return end
+
+            local total = topbar.AbsoluteSize.X
+            if total <= 0 then return end
+
+            local leftEdge, rightEdge
+
+            if badgeOnLeft then
+                -- Runs from just past the title to whatever claims the middle
+                -- of the bar first: the topbar search, or the right-hand rail.
+                leftEdge = TitleBlockEnd() + 33
+                if topbarSearch and topbarSearch.Visible then
+                    rightEdge = (topbarSearch.AbsolutePosition.X
+                              - topbar.AbsolutePosition.X) - 14
+                else
+                    rightEdge = total - CONTROLS_W - 12
+                    if creditPill and creditPill.Visible then
+                        rightEdge = rightEdge - creditPill.AbsoluteSize.X - 10
+                    end
+                end
+            else
+                if topbarSearch and topbarSearch.Visible then
+                    leftEdge = (topbarSearch.AbsolutePosition.X
+                             - topbar.AbsolutePosition.X)
+                             + topbarSearch.AbsoluteSize.X + 14
+                else
+                    leftEdge = TitleBlockEnd() + 18
+                end
+                rightEdge = total - CONTROLS_W
+                if creditPill and creditPill.Visible then
+                    rightEdge = rightEdge - creditPill.AbsoluteSize.X - 10
+                end
+            end
+
+            -- 21px thumbnail column + 14px of padding inside the pill.
+            local room = (rightEdge - leftEdge) - 35
+
+            if room < 46 then
+                badge.Visible = false
+                if divider then divider.Visible = false end
+                return
+            end
+
+            local fitted = fullName
+            if Measure(fitted, 11, Enum.Font.GothamMedium) > room then
+                -- Shrink from the end. Place names are short enough that a
+                -- linear walk costs less than the setup for a binary search.
+                local n = #fullName
+                while n > 1 do
+                    local try = string.sub(fullName, 1, n) .. "\u{2026}"
+                    if Measure(try, 11, Enum.Font.GothamMedium) <= room then
+                        fitted = try
+                        break
+                    end
+                    n = n - 1
+                end
+                if n <= 1 then fitted = "\u{2026}" end
+            end
+
+            badge.Visible = true
+            if divider then divider.Visible = true end
+            if fitted ~= lastFitted then
+                lastFitted     = fitted
+                nameLabel.Text = fitted
+            end
+        end
+
+        topbar:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+            FitGameBadge()
+        end)
+
         task.spawn(function()
             local ok, info = pcall(function()
                 return game:GetService("MarketplaceService")
@@ -1614,13 +1906,10 @@ function Nely:CreateWindow(opts)
             local placeName = (ok and info and info.Name) or subtitle
             if placeName == "" or not placeName then return end
 
-            -- Trim: place names run long and would push past the controls.
-            local limit = compact and 16 or 32
-            if #placeName > limit then
-                placeName = string.sub(placeName, 1, limit - 1) .. "\u{2026}"
-            end
-            nameLabel.Text = placeName
-            badge.Visible  = true
+            fullName = placeName
+            AttachTooltip(badge, placeName)
+            FitGameBadge()
+            task.defer(FitGameBadge)
 
             ResolveGameImage({ PlaceId = game.PlaceId }, function(asset)
                 if asset and badge.Parent then thumb.Image = asset end
@@ -1662,6 +1951,8 @@ function Nely:CreateWindow(opts)
     local railBtn  = ControlButton("grid", -82, theme.Accent)
     AttachTooltip(railBtn, "Collapse the sidebar to icons")
 
+    -- CONTROLS_W above has to stay in step with the leftmost button here.
+
     ----------------------------------------------------------------
     -- Credit pill
     ----------------------------------------------------------------
@@ -1679,6 +1970,11 @@ function Nely:CreateWindow(opts)
             ZIndex                 = 22,
             Parent                 = topbarRight,
         }, { Corner(7), Pad(0, 0, 8, 9) })
+
+        creditPill = credit
+        credit:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+            FitGameBadge()
+        end)
 
         local creditIcon = Icons.Render("github", credit, 12, theme.TextDim, 23)
         creditIcon.Position    = UDim2.new(0, 0, 0.5, 0)
@@ -1767,6 +2063,122 @@ function Nely:CreateWindow(opts)
     }, { List(6), Pad(0, 10, 0, 0) })
 
     ----------------------------------------------------------------
+    -- Player card
+    --
+    -- Anchored to the bottom of the sidebar: headshot, display name and
+    -- @username. It survives the rail by dropping to just the avatar,
+    -- which is the one part still recognisable at 58px wide.
+    --
+    -- The headshot comes from rbxthumb://, so it needs no HTTP call and
+    -- no executor support — Roblox resolves it internally.
+    ----------------------------------------------------------------
+
+    local PLAYER_CARD_H = 62
+    local playerCard, playerAvatar, playerName, playerSub
+
+    if opts.PlayerCard ~= false then
+        local me = Players.LocalPlayer
+
+        playerCard = New("TextButton", {
+            Name                   = "PlayerCard",
+            Size                   = UDim2.new(1, -14, 0, 46),
+            Position               = UDim2.new(0, 7, 1, -10),
+            AnchorPoint            = Vector2.new(0, 1),
+            BackgroundColor3       = theme.Elevated,
+            BackgroundTransparency = 0.45,
+            AutoButtonColor        = false,
+            Text                   = "",
+            ZIndex                 = 17,
+            Parent                 = sidebar,
+        }, { Corner(11), Stroke(theme.BorderSoft, 1, 0.55) })
+
+        -- Hairline above the card so it reads as a separate zone from
+        -- the tab list rather than another tab.
+        New("Frame", {
+            Size             = UDim2.new(1, -20, 0, 1),
+            Position         = UDim2.new(0, 10, 1, -PLAYER_CARD_H - 2),
+            AnchorPoint      = Vector2.new(0, 1),
+            BackgroundColor3 = theme.BorderSoft,
+            BackgroundTransparency = 0.35,
+            BorderSizePixel  = 0,
+            ZIndex           = 16,
+            Parent           = sidebar,
+        })
+
+        playerAvatar = New("ImageLabel", {
+            Size                   = UDim2.fromOffset(30, 30),
+            Position               = UDim2.new(0, 8, 0.5, 0),
+            AnchorPoint            = Vector2.new(0, 0.5),
+            BackgroundColor3       = theme.SurfaceAlt,
+            BackgroundTransparency = 0.25,
+            BorderSizePixel        = 0,
+            Image                  = ("rbxthumb://type=AvatarHeadShot&id=%d&w=60&h=60")
+                                       :format(me and me.UserId or 1),
+            ScaleType              = Enum.ScaleType.Crop,
+            ZIndex                 = 18,
+            Parent                 = playerCard,
+        }, { Corner(9), Stroke(theme.Accent, 1, 0.55) })
+
+        playerName = New("TextLabel", {
+            Size                   = UDim2.new(1, -50, 0, 13),
+            Position               = UDim2.new(0, 46, 0.5, -7),
+            AnchorPoint            = Vector2.new(0, 0.5),
+            BackgroundTransparency = 1,
+            Text                   = me and me.DisplayName or "Player",
+            TextColor3             = theme.Text,
+            TextSize               = 12,
+            Font                   = Enum.Font.GothamMedium,
+            TextXAlignment         = Enum.TextXAlignment.Left,
+            TextTruncate           = Enum.TextTruncate.AtEnd,
+            ZIndex                 = 18,
+            Parent                 = playerCard,
+        })
+
+        playerSub = New("TextLabel", {
+            Size                   = UDim2.new(1, -50, 0, 12),
+            Position               = UDim2.new(0, 46, 0.5, 8),
+            AnchorPoint            = Vector2.new(0, 0.5),
+            BackgroundTransparency = 1,
+            Text                   = "@" .. (me and me.Name or "player"),
+            TextColor3             = theme.TextDim,
+            TextSize               = 10,
+            Font                   = Enum.Font.Gotham,
+            TextXAlignment         = Enum.TextXAlignment.Left,
+            TextTruncate           = Enum.TextTruncate.AtEnd,
+            ZIndex                 = 18,
+            Parent                 = playerCard,
+        })
+
+        local exec = "unknown executor"
+        pcall(function()
+            if identifyexecutor then exec = (identifyexecutor()) end
+        end)
+
+        AttachTooltip(playerCard, ("%s  ·  uid %d  ·  %s")
+            :format(me and me.Name or "player", me and me.UserId or 0, exec))
+
+        playerCard.MouseEnter:Connect(function()
+            Tween(playerCard, { BackgroundTransparency = 0.2 }, EASE.Snap)
+        end)
+        playerCard.MouseLeave:Connect(function()
+            Tween(playerCard, { BackgroundTransparency = 0.45 }, EASE.Snap)
+        end)
+        playerCard.MouseButton1Click:Connect(function()
+            Ripple(playerCard, 46)
+            local copy = setclipboard or toclipboard or (syn and syn.write_clipboard)
+            if copy and me then
+                copy(me.Name)
+                Nely:Notify({
+                    Title   = "Copied username",
+                    Content = me.Name,
+                    Icon    = "user",
+                    Color   = theme.Success,
+                })
+            end
+        end)
+    end
+
+    ----------------------------------------------------------------
     -- Content host
     ----------------------------------------------------------------
 
@@ -1792,6 +2204,16 @@ function Nely:CreateWindow(opts)
     local RAIL_W  = 58
     local railed  = false
     local searchWrap                       -- assigned by the search block below
+
+    -- One place that owns the tab list's geometry. Three things want to move
+    -- it — the sidebar search, the player card, and the rail — and when each
+    -- of them set it directly the last one to run won.
+    local function LayoutTabList()
+        local top    = (searchWrap and searchWrap.Visible) and 46 or 10
+        local bottom = playerCard and (PLAYER_CARD_H + 4) or 10
+        tabList.Position = UDim2.fromOffset(7, top)
+        tabList.Size     = UDim2.new(1, -14, 1, -(top + bottom))
+    end
 
     local function ApplyRail(state, animate)
         railed = state and true or false
@@ -1834,12 +2256,28 @@ function Nely:CreateWindow(opts)
         -- steps aside and the tab list takes back the space.
         if searchWrap then
             searchWrap.Visible = not railed
-            tabList.Size     = railed and UDim2.new(1, -14, 1, -20) or UDim2.new(1, -14, 1, -58)
-            tabList.Position = railed and UDim2.fromOffset(7, 10) or UDim2.fromOffset(7, 46)
         end
+
+        -- The player card keeps its avatar and drops the text, so the rail
+        -- still shows you who you are logged in as.
+        if playerCard then
+            Tween(playerCard, {
+                Size = railed and UDim2.new(1, -14, 0, 44)
+                              or  UDim2.new(1, -14, 0, 46),
+            }, ease)
+            Tween(playerAvatar, {
+                Position = UDim2.new(0, railed and 7 or 8, 0.5, 0),
+            }, ease)
+            Tween(playerName, { TextTransparency = railed and 1 or 0 }, EASE.Snap)
+            Tween(playerSub,  { TextTransparency = railed and 1 or 0 }, EASE.Snap)
+        end
+
+        LayoutTabList()
     end
 
     Window.Railed = false
+    LayoutTabList()   -- SearchBar = false never reaches the search block
+
     function Window:SetRail(state)
         ApplyRail(state, true)
     end
@@ -5328,17 +5766,50 @@ function Nely:CreateWindow(opts)
         })
 
         if inTopbar then
-            -- Nothing was stacked above the tab list, so it keeps its full
-            -- height, and the rail has no sidebar box to hide: searchWrap
-            -- stays nil so ApplyRail leaves the tab list alone.
-            tabList.Size     = UDim2.new(1, -14, 1, -20)
-            tabList.Position = UDim2.fromOffset(7, 10)
+            -- Nothing is stacked above the tab list, and the rail has no
+            -- sidebar box to hide: searchWrap stays nil so LayoutTabList
+            -- gives the list the full height.
+
+            -- Let the game badge measure against the search field instead
+            -- of the title, so the two can never overlap.
+            topbarSearch = wrap
+
+            -- The field used to be a fixed 268px pinned to the centre, which
+            -- on a narrow window walked straight over the title. It now takes
+            -- a share of whatever the topbar has spare and right-aligns
+            -- against the credit pill, leaving the left half to the game name.
+            local function FitSearch()
+                local total = topbar.AbsoluteSize.X
+                if total <= 0 then return end
+
+                local right = total - CONTROLS_W - 12
+                if creditPill and creditPill.Visible then
+                    right = right - creditPill.AbsoluteSize.X - 10
+                end
+
+                local room = right - (TitleBlockEnd() + 24)
+                if room < 190 then
+                    wrap.Visible = false
+                    FitGameBadge()
+                    return
+                end
+
+                wrap.Visible  = true
+                wrap.Size     = UDim2.fromOffset(
+                    math.clamp(math.floor(room * 0.45), 150, 300), 30)
+                wrap.Position = UDim2.new(0, right, 0.5, 0)
+                FitGameBadge()
+            end
+
+            wrap.AnchorPoint = Vector2.new(1, 0.5)
+            topbar:GetPropertyChangedSignal("AbsoluteSize"):Connect(FitSearch)
+            FitSearch()
+            task.defer(FitSearch)
         else
             searchWrap = wrap
-            -- push the tab list down to make room
-            tabList.Size     = UDim2.new(1, -14, 1, -58)
-            tabList.Position = UDim2.fromOffset(7, 46)
         end
+
+        LayoutTabList()
 
         local function RowText(row)
             local parts = {}
@@ -5397,6 +5868,379 @@ function Nely:CreateWindow(opts)
             Tween(sStroke, { Color = theme.BorderSoft, Transparency = 0.5 }, EASE.Snap)
             TintIcon(sIcon, theme.TextDim)
         end)
+    end
+
+    ----------------------------------------------------------------
+    -- Command palette
+    --
+    -- Ctrl+K anywhere in the game. Type, and it searches every row in
+    -- every tab at once, not just the tab you are looking at. Pick one
+    -- and it switches tab, scrolls the row into view and pulses it.
+    --
+    -- The index is built when the palette opens rather than kept in
+    -- sync, because rows come and go (groups collapse, hubs add tabs
+    -- after load) and a stale registry would point at destroyed
+    -- instances. Walking a few hundred frames once per open is free.
+    --
+    -- Matching is subsequence, not substring: "aimf" finds "Aim field
+    -- of view". Consecutive hits score higher so exact prefixes win.
+    ----------------------------------------------------------------
+
+    local paletteOpen = false
+
+    if opts.CommandPalette ~= false then
+        local scrim = New("TextButton", {
+            Name                   = "PaletteScrim",
+            Size                   = UDim2.fromScale(1, 1),
+            BackgroundColor3       = Color3.new(0, 0, 0),
+            BackgroundTransparency = 1,
+            AutoButtonColor        = false,
+            Text                   = "",
+            Visible                = false,
+            ZIndex                 = 900,
+            Parent                 = Root,
+        })
+
+        local box = New("Frame", {
+            Name             = "Palette",
+            Size             = UDim2.fromOffset(520, 60),
+            Position         = UDim2.new(0.5, 0, 0, 120),
+            AnchorPoint      = Vector2.new(0.5, 0),
+            BackgroundColor3 = theme.Surface,
+            BorderSizePixel  = 0,
+            -- Deliberately NOT clipping: the drop shadow is a child, and
+            -- clipping would eat it. The results list is a ScrollingFrame,
+            -- which clips its own contents, so nothing spills during the
+            -- open animation anyway.
+            ZIndex           = 901,
+            Parent           = scrim,
+        }, {
+            Corner(14),
+            Stroke(theme.Border, 1, 0.25),
+            New("UISizeConstraint", { MaxSize = Vector2.new(560, 420) }),
+        })
+
+        Shadow(box, 34, 0.6)
+
+        local pIcon = Icons.Render("search", box, 16, theme.Accent, 903)
+        pIcon.Position    = UDim2.fromOffset(18, 22)
+        pIcon.AnchorPoint = Vector2.new(0, 0)
+
+        local pBox = New("TextBox", {
+            Size                   = UDim2.new(1, -110, 0, 24),
+            Position               = UDim2.fromOffset(44, 18),
+            BackgroundTransparency = 1,
+            Text                   = "",
+            PlaceholderText        = "Jump to anything\u{2026}",
+            PlaceholderColor3      = theme.TextDim,
+            TextColor3             = theme.Text,
+            TextSize               = 15,
+            Font                   = Enum.Font.Gotham,
+            TextXAlignment         = Enum.TextXAlignment.Left,
+            ClearTextOnFocus       = false,
+            ZIndex                 = 903,
+            Parent                 = box,
+        })
+
+        New("TextLabel", {
+            Size                   = UDim2.fromOffset(56, 18),
+            Position               = UDim2.new(1, -18, 0, 21),
+            AnchorPoint            = Vector2.new(1, 0),
+            BackgroundColor3       = theme.Elevated,
+            BackgroundTransparency = 0.4,
+            Text                   = "esc",
+            TextColor3             = theme.TextDim,
+            TextSize               = 10,
+            Font                   = Enum.Font.Code,
+            ZIndex                 = 903,
+            Parent                 = box,
+        }, { Corner(6) })
+
+        local results = New("ScrollingFrame", {
+            Name                   = "Results",
+            Size                   = UDim2.new(1, -16, 1, -68),
+            Position               = UDim2.fromOffset(8, 62),
+            BackgroundTransparency = 1,
+            BorderSizePixel        = 0,
+            ScrollBarThickness     = 2,
+            ScrollBarImageColor3   = theme.Border,
+            CanvasSize             = UDim2.new(),
+            AutomaticCanvasSize    = Enum.AutomaticSize.Y,
+            ScrollingDirection     = Enum.ScrollingDirection.Y,
+            ZIndex                 = 902,
+            Parent                 = box,
+        }, { List(2) })
+
+        ------------------------------------------------------------
+        -- Index
+        ------------------------------------------------------------
+
+        local entries, shown, cursor = {}, {}, 1
+
+        local function PrimaryText(row)
+            -- The first non-empty label in a row is its name. Everything
+            -- after it is a description, a value readout or a unit.
+            for _, child in ipairs(row:GetDescendants()) do
+                if child:IsA("TextLabel") and child.Text ~= "" then
+                    return child.Text
+                end
+            end
+            return nil
+        end
+
+        local function Collect(host, tab, out)
+            for _, child in ipairs(host:GetChildren()) do
+                if child:IsA("GuiObject") then
+                    if child:GetAttribute("NelyContainer") then
+                        Collect(child, tab, out)
+                    elseif not child:GetAttribute("NelySticky") then
+                        local name = PrimaryText(child)
+                        if name and #name > 0 then
+                            table.insert(out, {
+                                Name  = name,
+                                Lower = string.lower(name),
+                                Tab   = tab,
+                                Row   = child,
+                            })
+                        end
+                    end
+                end
+            end
+        end
+
+        local function BuildIndex()
+            entries = {}
+            for _, tab in ipairs(Window.Tabs) do
+                -- Tab names are jump targets in their own right.
+                table.insert(entries, {
+                    Name    = tab.Name,
+                    Lower   = string.lower(tab.Name),
+                    Tab     = tab,
+                    IsTab   = true,
+                })
+                Collect(tab.Page, tab, entries)
+            end
+        end
+
+        -- Subsequence score. Returns nil when the query does not fit at
+        -- all, otherwise higher is better.
+        local function Score(haystack, needle)
+            if needle == "" then return 0 end
+            local hi, score, streak = 1, 0, 0
+            for i = 1, #needle do
+                local c     = string.sub(needle, i, i)
+                local found = string.find(haystack, c, hi, true)
+                if not found then return nil end
+                if found == hi then
+                    streak = streak + 1
+                    score  = score + 4 + streak
+                else
+                    streak = 0
+                    score  = score + 1
+                end
+                if found == 1 then score = score + 8 end
+                hi = found + 1
+            end
+            -- Shorter names that contain the query are the better match.
+            return score - (#haystack * 0.05)
+        end
+
+        ------------------------------------------------------------
+        -- Jump
+        ------------------------------------------------------------
+
+        local function Pulse(row)
+            local stroke = row:FindFirstChildOfClass("UIStroke")
+            if stroke then
+                local c, t = stroke.Color, stroke.Transparency
+                stroke.Color, stroke.Transparency = theme.Accent, 0
+                task.delay(0.1, function()
+                    if stroke.Parent then
+                        Tween(stroke, { Color = c, Transparency = t }, EASE.Glide)
+                    end
+                end)
+                return
+            end
+            -- No stroke to borrow, so flash the background instead.
+            local was = row.BackgroundTransparency
+            if was >= 1 then return end
+            row.BackgroundTransparency = math.max(0, was - 0.35)
+            Tween(row, { BackgroundTransparency = was }, EASE.Glide)
+        end
+
+        local ClosePalette   -- defined below, referenced here
+
+        local function Jump(entry)
+            ClosePalette()
+            if entry.Tab and Window.ActiveTab ~= entry.Tab then
+                entry.Tab.Activate()
+            end
+            if entry.IsTab or not entry.Row or not entry.Row.Parent then return end
+
+            -- One frame for the tab swap to lay out, otherwise AbsolutePosition
+            -- is still whatever it was while the page was hidden.
+            task.defer(function()
+                local page = entry.Tab.Page
+                if not (page and entry.Row.Parent) then return end
+                local offset = entry.Row.AbsolutePosition.Y
+                            - page.AbsolutePosition.Y
+                            + page.CanvasPosition.Y
+                Tween(page, {
+                    CanvasPosition = Vector2.new(0, math.max(0, offset - 60)),
+                }, EASE.Glide)
+                Pulse(entry.Row)
+            end)
+        end
+
+        ------------------------------------------------------------
+        -- Rendering
+        ------------------------------------------------------------
+
+        local rowButtons = {}
+
+        local function Highlight()
+            for i, btn in ipairs(rowButtons) do
+                local on = (i == cursor)
+                Tween(btn, { BackgroundTransparency = on and 0.25 or 1 }, EASE.Snap)
+            end
+        end
+
+        local function Render(query)
+            for _, child in ipairs(results:GetChildren()) do
+                if child:IsA("GuiObject") then child:Destroy() end
+            end
+            rowButtons, shown, cursor = {}, {}, 1
+
+            local scored = {}
+            for _, entry in ipairs(entries) do
+                local s = query == "" and 0 or Score(entry.Lower, query)
+                if s then table.insert(scored, { entry = entry, score = s }) end
+            end
+            table.sort(scored, function(a, b) return a.score > b.score end)
+
+            for i = 1, math.min(#scored, 40) do
+                local entry = scored[i].entry
+                table.insert(shown, entry)
+
+                local btn = New("TextButton", {
+                    Size                   = UDim2.new(1, 0, 0, 34),
+                    BackgroundColor3       = theme.Elevated,
+                    BackgroundTransparency = 1,
+                    AutoButtonColor        = false,
+                    Text                   = "",
+                    LayoutOrder            = i,
+                    ZIndex                 = 903,
+                    Parent                 = results,
+                }, { Corner(8) })
+
+                Icons.Render(entry.IsTab and "layout-grid" or "chevron-right",
+                    btn, 13, theme.TextDim, 904).Position = UDim2.fromOffset(11, 11)
+
+                New("TextLabel", {
+                    Size                   = UDim2.new(1, -140, 1, 0),
+                    Position               = UDim2.fromOffset(34, 0),
+                    BackgroundTransparency = 1,
+                    Text                   = entry.Name,
+                    TextColor3             = theme.Text,
+                    TextSize               = 13,
+                    Font                   = Enum.Font.Gotham,
+                    TextXAlignment         = Enum.TextXAlignment.Left,
+                    TextTruncate           = Enum.TextTruncate.AtEnd,
+                    ZIndex                 = 904,
+                    Parent                 = btn,
+                })
+
+                New("TextLabel", {
+                    Size                   = UDim2.fromOffset(110, 1),
+                    Position               = UDim2.new(1, -12, 0.5, 0),
+                    AnchorPoint            = Vector2.new(1, 0.5),
+                    AutomaticSize          = Enum.AutomaticSize.Y,
+                    BackgroundTransparency = 1,
+                    Text                   = entry.IsTab and "tab" or entry.Tab.Name,
+                    TextColor3             = theme.TextDim,
+                    TextSize               = 10,
+                    Font                   = Enum.Font.GothamMedium,
+                    TextXAlignment         = Enum.TextXAlignment.Right,
+                    TextTruncate           = Enum.TextTruncate.AtEnd,
+                    ZIndex                 = 904,
+                    Parent                 = btn,
+                })
+
+                btn.MouseEnter:Connect(function()
+                    cursor = i
+                    Highlight()
+                end)
+                btn.MouseButton1Click:Connect(function() Jump(entry) end)
+
+                table.insert(rowButtons, btn)
+            end
+
+            -- 60px of input row, 34 per result, 10 of breathing room.
+            local height = 60 + math.min(#rowButtons, 8) * 36 + (#rowButtons > 0 and 10 or 0)
+            Tween(box, { Size = UDim2.fromOffset(520, height) }, EASE.Glide)
+            Highlight()
+        end
+
+        ------------------------------------------------------------
+        -- Open / close
+        ------------------------------------------------------------
+
+        local function OpenPalette()
+            if paletteOpen then return end
+            paletteOpen   = true
+            scrim.Visible = true
+            BuildIndex()
+            pBox.Text = ""
+            Render("")
+            Tween(scrim, { BackgroundTransparency = 0.45 }, EASE.Smooth)
+            box.Position = UDim2.new(0.5, 0, 0, 100)
+            Tween(box, { Position = UDim2.new(0.5, 0, 0, 120) }, EASE.Pop)
+            task.defer(function() pBox:CaptureFocus() end)
+        end
+
+        ClosePalette = function()
+            if not paletteOpen then return end
+            paletteOpen = false
+            pBox:ReleaseFocus()
+            Tween(scrim, { BackgroundTransparency = 1 }, EASE.Smooth)
+            task.delay(0.18, function()
+                if not paletteOpen then scrim.Visible = false end
+            end)
+        end
+
+        pBox:GetPropertyChangedSignal("Text"):Connect(function()
+            Render(string.lower(pBox.Text))
+        end)
+
+        scrim.MouseButton1Click:Connect(ClosePalette)
+
+        local paletteKey = UserInputService.InputBegan:Connect(function(input, typing)
+            if input.KeyCode == Enum.KeyCode.K
+               and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+                if paletteOpen then ClosePalette() else OpenPalette() end
+                return
+            end
+            if not paletteOpen then return end
+
+            if input.KeyCode == Enum.KeyCode.Escape then
+                ClosePalette()
+            elseif input.KeyCode == Enum.KeyCode.Down then
+                cursor = math.min(cursor + 1, math.max(#rowButtons, 1))
+                Highlight()
+            elseif input.KeyCode == Enum.KeyCode.Up then
+                cursor = math.max(cursor - 1, 1)
+                Highlight()
+            elseif input.KeyCode == Enum.KeyCode.Return and shown[cursor] then
+                Jump(shown[cursor])
+            end
+            -- `typing` is deliberately ignored: the palette's own TextBox is
+            -- what has focus, and every branch above is a key it owns.
+        end)
+
+        table.insert(Nely.Connections, paletteKey)
+
+        function Window:OpenPalette()  OpenPalette()  end
+        function Window:ClosePalette() ClosePalette() end
     end
 
     ----------------------------------------------------------------
