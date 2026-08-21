@@ -6,7 +6,7 @@
 ]]
 
 local Nely = {}
-Nely.Version   = "3.2.0"
+Nely.Version   = "3.3.0"
 Nely.Flags     = {}
 Nely.Connections = {}
 Nely.Unloaded  = false
@@ -168,6 +168,68 @@ Nely.Themes = {
     },
 }
 
+--------------------------------------------------------------------
+--  SILVER FAMILY
+--
+--  Built for a grey logo. Every theme below shares one strictly neutral
+--  greyscale ramp — no blue, no green, nothing that would tint a silver
+--  mark sitting on top of it — and differs only in its accent. That is
+--  the whole trick: when the chrome has no hue of its own, a metallic
+--  logo reads as metal instead of picking up a colour cast, and any
+--  accent you like can sit beside it without clashing.
+--
+--  Silver is the one that matches the logo directly. The rest are the
+--  same shell with one hue turned on.
+--------------------------------------------------------------------
+
+do
+    -- One ramp, six themes. Deeper than Graphite so a light logo has
+    -- somewhere to sit.
+    local NEUTRAL = {
+        Backdrop   = Color3.fromRGB(14, 14, 16),
+        Surface    = Color3.fromRGB(21, 21, 24),
+        SurfaceAlt = Color3.fromRGB(29, 29, 33),
+        Elevated   = Color3.fromRGB(38, 38, 43),
+        Hover      = Color3.fromRGB(50, 50, 56),
+        Border     = Color3.fromRGB(58, 58, 65),
+        BorderSoft = Color3.fromRGB(35, 35, 40),
+        Text       = Color3.fromRGB(238, 238, 242),
+        TextSub    = Color3.fromRGB(156, 156, 166),
+        TextDim    = Color3.fromRGB(108, 108, 118),
+        Success    = Color3.fromRGB(86, 199, 128),
+        Danger     = Color3.fromRGB(238, 98, 98),
+        Warning    = Color3.fromRGB(230, 178, 78),
+    }
+
+    local ACCENTS = {
+        -- The default for the grey mark. A cool platinum, one step off
+        -- white, so it reads as metal rather than as plain white text.
+        Silver  = { Color3.fromRGB(198, 202, 210), Color3.fromRGB(233, 236, 242), Color3.fromRGB(134, 139, 150) },
+        -- Darkest of the set. Almost no accent at all: the UI recedes and
+        -- the logo is the only bright thing on screen.
+        Onyx    = { Color3.fromRGB(126, 130, 138), Color3.fromRGB(168, 172, 182), Color3.fromRGB( 84,  87,  94) },
+        Crimson = { Color3.fromRGB(226,  74,  74), Color3.fromRGB(244, 126, 126), Color3.fromRGB(166,  38,  38) },
+        Violet  = { Color3.fromRGB(150, 118, 245), Color3.fromRGB(186, 164, 252), Color3.fromRGB(103,  74, 194) },
+        Rose    = { Color3.fromRGB(238, 118, 168), Color3.fromRGB(248, 162, 197), Color3.fromRGB(190,  70, 122) },
+        Frost   = { Color3.fromRGB( 96, 178, 240), Color3.fromRGB(150, 208, 250), Color3.fromRGB( 52, 124, 186) },
+        Lime    = { Color3.fromRGB(158, 216,  84), Color3.fromRGB(194, 235, 140), Color3.fromRGB(110, 162,  46) },
+    }
+
+    for name, accent in pairs(ACCENTS) do
+        local theme = {}
+        for slot, colour in pairs(NEUTRAL) do theme[slot] = colour end
+        theme.Accent     = accent[1]
+        theme.AccentSoft = accent[2]
+        theme.AccentDeep = accent[3]
+        Nely.Themes[name] = theme
+    end
+
+    -- Onyx leans darker still. Overriding after the loop keeps the table
+    -- above readable as pure accent data.
+    Nely.Themes.Onyx.Backdrop = Color3.fromRGB(10, 10, 11)
+    Nely.Themes.Onyx.Surface  = Color3.fromRGB(16, 16, 18)
+end
+
 Nely.Theme = Nely.Themes.Cobalt
 
 --------------------------------------------------------------------
@@ -215,6 +277,17 @@ local EASE = {
     Smooth  = TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
     Glide   = TweenInfo.new(0.42, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
     Pop     = TweenInfo.new(0.38, Enum.EasingStyle.Back,  Enum.EasingDirection.Out),
+
+    -- Back/In anticipates before it collapses: the window swells a hair,
+    -- then drops away. Reads as an object leaving rather than a frame
+    -- being switched off.
+    Collapse = TweenInfo.new(0.30, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+    -- A longer, softer Pop for the things that should feel weighty:
+    -- the window arriving, the orb landing.
+    Spring   = TweenInfo.new(0.46, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+    -- Straight-line travel, for anything flying between two points where
+    -- an ease would read as drag.
+    Fly      = TweenInfo.new(0.34, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut),
 }
 
 local function Tween(inst, props, preset)
@@ -1300,8 +1373,12 @@ end
 --  mark reads as intentional instead of collapsing into an empty square.
 --==================================================================
 
-local function BrandMark(parent, title, logo, textSize, radius, zindex)
-    New("TextLabel", {
+-- plain = true strips the coloured tile once the artwork loads, so the logo
+-- stands on its own instead of sitting on an accent square. That is what the
+-- topbar and the splash want; the orb keeps its tile, because a logo floating
+-- with no disc behind it has no edge to read against the game world.
+local function BrandMark(parent, title, logo, textSize, radius, zindex, plain)
+    local letter = New("TextLabel", {
         Size                   = UDim2.fromScale(1, 1),
         BackgroundTransparency = 1,
         Text                   = string.sub(title, 1, 1):upper(),
@@ -1327,6 +1404,20 @@ local function BrandMark(parent, title, logo, textSize, radius, zindex)
     ResolveImageAsync(logo, function(content)
         image.Image = content
         Tween(image, { ImageTransparency = 0 }, EASE.Smooth)
+
+        -- The letter is the fallback, not a backdrop. Logos are very often
+        -- transparent PNGs, and leaving it lit meant a big "N" showing
+        -- straight through the artwork. It fades out on the same beat the
+        -- logo fades in, and stays put if the lookup never returns.
+        Tween(letter, { TextTransparency = 1 }, EASE.Smooth)
+
+        if plain then
+            Tween(parent, { BackgroundTransparency = 1 }, EASE.Smooth)
+            local gradient = parent:FindFirstChildOfClass("UIGradient")
+            if gradient then gradient:Destroy() end
+            local stroke = parent:FindFirstChildOfClass("UIStroke")
+            if stroke then Tween(stroke, { Transparency = 1 }, EASE.Smooth) end
+        end
     end)
 end
 
@@ -1635,9 +1726,27 @@ function Nely:CreateWindow(opts)
         Parent           = topbar,
     })
 
-    -- Logo mark
+    ----------------------------------------------------------------
+    -- Brand block
+    --
+    -- A supplied logo gets real presence: 34px square with no tile
+    -- behind it, which is roughly the size a wordmark occupies in the
+    -- tools this is modelled on. Without a logo it falls back to the
+    -- old 26px accent tile with the hub initial, because a lone letter
+    -- blown up to 34px just looks like a typo.
+    --
+    -- LogoSize overrides the square. LogoStyle = "tile" keeps the
+    -- accent square under the artwork if that is the look you want.
+    ----------------------------------------------------------------
+
+    local hasLogo   = opts.Logo ~= nil and opts.Logo ~= ""
+    local plainLogo = hasLogo and opts.LogoStyle ~= "tile"
+    local logoSize  = opts.LogoSize or (hasLogo and (compact and 28 or 34) or 26)
+    local titleX    = 16 + logoSize + (hasLogo and 13 or 10)
+
     local logo = New("Frame", {
-        Size             = UDim2.fromOffset(26, 26),
+        Name             = "Brand",
+        Size             = UDim2.fromOffset(logoSize, logoSize),
         Position         = UDim2.new(0, 16, 0.5, 0),
         AnchorPoint      = Vector2.new(0, 0.5),
         BackgroundColor3 = theme.Accent,
@@ -1645,24 +1754,25 @@ function Nely:CreateWindow(opts)
         ZIndex           = 21,
         Parent           = topbar,
     }, {
-        Corner(8),
+        Corner(math.floor(logoSize * 0.3)),
         Gradient(ColorSequence.new({
             ColorSequenceKeypoint.new(0, theme.AccentSoft),
             ColorSequenceKeypoint.new(1, theme.AccentDeep),
         }), 135),
     })
 
-    BrandMark(logo, title, opts.Logo, 15, 8, 22)
+    BrandMark(logo, title, opts.Logo, math.floor(logoSize * 0.58),
+        math.floor(logoSize * 0.3), 22, plainLogo)
 
     New("TextLabel", {
         Name                   = "Title",
-        Size                   = UDim2.fromOffset(220, 16),
-        Position               = UDim2.new(0, 52, 0.5, subtitle ~= "" and -8 or 0),
+        Size                   = UDim2.fromOffset(240, 18),
+        Position               = UDim2.new(0, titleX, 0.5, subtitle ~= "" and -8 or 0),
         AnchorPoint            = Vector2.new(0, 0.5),
         BackgroundTransparency = 1,
         Text                   = title,
         TextColor3             = theme.Text,
-        TextSize               = 15,
+        TextSize               = hasLogo and 16 or 15,
         Font                   = Enum.Font.GothamBold,
         TextXAlignment         = Enum.TextXAlignment.Left,
         ZIndex                 = 21,
@@ -1672,7 +1782,7 @@ function Nely:CreateWindow(opts)
     if subtitle ~= "" then
         New("TextLabel", {
             Size                   = UDim2.fromOffset(240, 14),
-            Position               = UDim2.new(0, 52, 0.5, 9),
+            Position               = UDim2.new(0, titleX, 0.5, 9),
             AnchorPoint            = Vector2.new(0, 0.5),
             BackgroundTransparency = 1,
             Text                   = subtitle,
@@ -1740,10 +1850,11 @@ function Nely:CreateWindow(opts)
     -- label is a container, not the width of the text inside it.
     local function TitleBlockEnd()
         local titleW = TextService:GetTextSize(
-            title, 15, Enum.Font.GothamBold, Vector2.new(9999, 40)).X
+            title, hasLogo and 16 or 15, Enum.Font.GothamBold,
+            Vector2.new(9999, 40)).X
         local subW = subtitle ~= "" and TextService:GetTextSize(
             subtitle, 11, Enum.Font.Gotham, Vector2.new(9999, 40)).X or 0
-        return 52 + math.max(titleW, subW)
+        return titleX + math.max(titleW, subW)
     end
 
     if opts.ShowGame ~= false then
@@ -2384,11 +2495,14 @@ function Nely:CreateWindow(opts)
     -- Minimize orb
     ----------------------------------------------------------------
 
+    -- Centre-anchored, unlike the rest of the left-edge furniture. The open
+    -- and minimize animations scale the orb, and a scale about a left edge
+    -- looks like the orb is sliding sideways rather than growing.
     local orb = New("TextButton", {
         Name             = "Orb",
         Size             = UDim2.fromOffset(50, 50),
-        Position         = UDim2.new(0, 28, 0.5, 0),
-        AnchorPoint      = Vector2.new(0, 0.5),
+        Position         = UDim2.new(0, 53, 0.5, 0),
+        AnchorPoint      = Vector2.new(0.5, 0.5),
         BackgroundColor3 = theme.Accent,
         AutoButtonColor  = false,
         Text             = "",
@@ -2426,12 +2540,37 @@ function Nely:CreateWindow(opts)
     -- the thumbnail resolves, and stays visible if the lookup fails.
     BrandMark(orb, title, opts.Logo, 20, 25, 401)
 
-    ResolveGameImage({ PlaceId = game.PlaceId }, function(asset)
-        if asset and orbImage.Parent then
-            orbImage.Image = asset
-            Tween(orbImage, { ImageTransparency = 0 }, EASE.Smooth)
-        end
-    end)
+    ------------------------------------------------------------
+    -- What the orb shows
+    --
+    -- By default it is the current place's thumbnail, so a collapsed
+    -- window still says which game it belongs to. Two overrides:
+    --
+    --   OrbImage   = "138846809155036"   -- a fixed asset, e.g. your logo
+    --   OrbPlaceId = 142823291           -- a fixed game's icon
+    --   OrbImage   = false               -- no image, brand mark only
+    --
+    -- OrbPlaceId is the one a single-game script wants: the icon then
+    -- stays that game's icon no matter where the script is executed.
+    ------------------------------------------------------------
+
+    if opts.OrbImage == false then
+        -- Nothing to resolve; the brand mark underneath is the whole orb.
+    elseif opts.OrbImage then
+        ResolveImageAsync(opts.OrbImage, function(asset)
+            if asset and orbImage.Parent then
+                orbImage.Image = asset
+                Tween(orbImage, { ImageTransparency = 0 }, EASE.Smooth)
+            end
+        end)
+    else
+        ResolveGameImage({ PlaceId = opts.OrbPlaceId or game.PlaceId }, function(asset)
+            if asset and orbImage.Parent then
+                orbImage.Image = asset
+                Tween(orbImage, { ImageTransparency = 0 }, EASE.Smooth)
+            end
+        end)
+    end
 
     -- breathing halo
     local halo = New("Frame", {
@@ -2460,42 +2599,109 @@ function Nely:CreateWindow(opts)
     -- Open / minimize / close
     ----------------------------------------------------------------
 
+    ----------------------------------------------------------------
+    -- Why these animate a UIScale instead of Size
+    --
+    -- Tweening shell.Size looked wrong, and it is worth being precise
+    -- about why. The shell does not clip, and its children are only
+    -- partly scale-sized: the sidebar is a fixed 168px wide, the topbar
+    -- a fixed 46px tall, and every piece of text is a fixed point size.
+    -- So shrinking the shell did not shrink the window — it shrank the
+    -- backdrop out from under content that stayed exactly where it was,
+    -- and on close, when the target was zero, the whole interface was
+    -- left hanging in space around a frame with no size at all.
+    --
+    -- UIScale scales the entire subtree, text and fixed offsets and all,
+    -- so the window behaves like one object. Scale is reset to 1 once
+    -- the window is open, so dragging and resizing never see it.
+    ----------------------------------------------------------------
+
+    local shellScale = New("UIScale", { Scale = 1, Parent = shell })
+    local orbScale   = New("UIScale", { Scale = 1, Parent = orb })
+
+    -- Where the shell sits when it is not flying anywhere. Captured before
+    -- the first minimize and restored on open, so a window the user dragged
+    -- somewhere comes back to where they left it.
+    local homePosition = shell.Position
+
+    -- Centre of the orb expressed in the shell's terms. The shell is centre
+    -- anchored and so is the orb, so this is just the orb's own position.
+    local function OrbAnchor()
+        return orb.Position
+    end
+
     local function OpenWindow(animate)
+        local fromOrb    = Window.Minimized
         Window.Minimized = false
-        shell.Visible = true
-        orb.Visible = false
+        shell.Visible    = true
         Tween(Blur, { Size = 14 }, EASE.Glide)
-        if animate ~= false then
-            local target = Window.CurrentSize
-            shell.Size = UDim2.fromOffset(target.X.Offset * 0.9, target.Y.Offset * 0.9)
-            shell.BackgroundTransparency = 1
-            Tween(shell, { Size = target, BackgroundTransparency = 0.04 }, EASE.Pop)
+
+        -- The orb used to blink out of existence. It now retracts, which
+        -- also covers the moment the shell is growing over the top of it.
+        if orb.Visible then
+            Tween(orbScale, { Scale = 0 }, EASE.Collapse)
+            task.delay(0.22, function()
+                if not Window.Minimized then orb.Visible = false end
+            end)
         end
+
+        if animate == false then
+            shellScale.Scale = 1
+            shell.Position   = homePosition
+            shell.BackgroundTransparency = opts.Transparent == false and 0 or 0.04
+            return
+        end
+
+        -- Grow out of wherever it collapsed to, then settle home. Position
+        -- and scale run on the same clock so it reads as one movement.
+        --
+        -- Coming back from the orb the shell is already parked on top of it
+        -- at 5%. On a first open there is nothing to grow from, so it starts
+        -- just under full size: enough for the spring to have something to
+        -- do, not so much that the window lurches.
+        if not fromOrb then
+            shellScale.Scale = 0.92
+            shell.Position   = homePosition
+        end
+
+        shell.BackgroundTransparency = opts.Transparent == false and 0 or 0.04
+        Tween(shell, { Position = homePosition }, EASE.Fly)
+        Tween(shellScale, { Scale = 1 }, EASE.Spring)
     end
 
     local function MinimizeWindow()
+        if Window.Minimized then return end
         Window.Minimized = true
         Tween(Blur, { Size = 0 }, EASE.Smooth)
-        local current = Window.CurrentSize
-        Tween(shell, {
-            Size                   = UDim2.fromOffset(current.X.Offset * 0.86, current.Y.Offset * 0.86),
-            BackgroundTransparency = 1,
-        }, EASE.Smooth)
-        task.delay(0.26, function()
-            if Window.Destroyed then return end
+
+        homePosition = shell.Position
+
+        -- Shrink toward the orb rather than in place: the window visibly
+        -- goes somewhere, and the orb it lands on is already there waiting.
+        orb.Visible      = true
+        orbScale.Scale   = 0
+        Tween(shell, { Position = OrbAnchor() }, EASE.Fly)
+        Tween(shellScale, { Scale = 0.05 }, EASE.Collapse)
+
+        task.delay(0.30, function()
+            if Window.Destroyed or not Window.Minimized then return end
             shell.Visible = false
-            orb.Visible   = true
-            orb.Size      = UDim2.fromOffset(0, 0)
-            Tween(orb, { Size = UDim2.fromOffset(50, 50) }, EASE.Pop)
+            Tween(orbScale, { Scale = 1 }, EASE.Spring)
         end)
     end
 
     function Window:Destroy()
+        if Window.Destroyed then return end
         Window.Destroyed = true
         UserInputService.MouseIconEnabled = true
+
         Tween(Blur, { Size = 0 }, EASE.Smooth)
-        Tween(shell, { Size = UDim2.fromOffset(0, 0), BackgroundTransparency = 1 }, EASE.Smooth)
-        Tween(orb, { Size = UDim2.fromOffset(0, 0) }, EASE.Smooth)
+        -- Back/In: a small swell, then away. Fading the backdrop at the
+        -- same time stops the last few frames looking like a hard cut.
+        Tween(shellScale, { Scale = 0 }, EASE.Collapse)
+        Tween(shell, { BackgroundTransparency = 1 }, EASE.Smooth)
+        Tween(orbScale, { Scale = 0 }, EASE.Collapse)
+
         task.delay(0.4, function()
             for _, conn in ipairs(Nely.Connections) do
                 pcall(function() conn:Disconnect() end)
@@ -6367,54 +6573,161 @@ function Nely:CreateWindow(opts)
     if opts.LoadingEnabled ~= false then
         shell.Visible = false
 
+        -- Dim the game behind it. The blur alone left the splash floating on
+        -- whatever happened to be on screen, which is what made it read as a
+        -- widget rather than a loading screen.
+        local scrim = New("Frame", {
+            Name                   = "SplashScrim",
+            Size                   = UDim2.fromScale(1, 1),
+            BackgroundColor3       = Color3.new(0, 0, 0),
+            BackgroundTransparency = 1,
+            BorderSizePixel        = 0,
+            ZIndex                 = 799,
+            Parent                 = Root,
+        })
+        Tween(scrim, { BackgroundTransparency = 0.35 }, EASE.Smooth)
+
         local splash = New("Frame", {
             Name             = "Splash",
-            Size             = UDim2.fromOffset(300, 120),
+            Size             = UDim2.fromOffset(340, 214),
             Position         = UDim2.fromScale(0.5, 0.5),
             AnchorPoint      = Vector2.new(0.5, 0.5),
             BackgroundColor3 = theme.Surface,
             BorderSizePixel  = 0,
             ZIndex           = 800,
             Parent           = Root,
-        }, { Corner(16), Stroke(theme.Border, 1, 0.35) })
-        Shadow(splash, 24, 0.6, 16)
+        }, { Corner(20), Stroke(theme.Border, 1, 0.3) })
+        Shadow(splash, 40, 0.7, 20)
+
+        local splashScale = New("UIScale", { Scale = 0.9, Parent = splash })
+
+        -- Faint accent wash top-to-bottom so the card is not a flat slab.
+        -- Transparency lives entirely in the gradient: setting it on the
+        -- frame as well would multiply the two and wash it out to nothing.
+        New("Frame", {
+            Size                   = UDim2.fromScale(1, 1),
+            BackgroundColor3       = theme.Accent,
+            BackgroundTransparency = 0,
+            BorderSizePixel        = 0,
+            ZIndex                 = 800,
+            Parent                 = splash,
+        }, {
+            Corner(20),
+            Gradient(ColorSequence.new(theme.Accent, theme.Surface), 90,
+                NumberSequence.new({
+                    NumberSequenceKeypoint.new(0, 0.90),
+                    NumberSequenceKeypoint.new(1, 1),
+                })),
+        })
+
+        ------------------------------------------------------------
+        -- Logo, and the ring that sweeps around it
+        --
+        -- The ring is a UIStroke with a UIGradient inside it. Rotating
+        -- the gradient sweeps the visible part of the stroke around the
+        -- circle, which gives a comet-tail spinner without needing a
+        -- spinner image — nothing to upload, nothing to fail to load.
+        ------------------------------------------------------------
+
+        local ringSize = 78
+
+        local ring = New("Frame", {
+            Name                   = "Ring",
+            Size                   = UDim2.fromOffset(ringSize, ringSize),
+            Position               = UDim2.new(0.5, 0, 0, 26),
+            AnchorPoint            = Vector2.new(0.5, 0),
+            BackgroundTransparency = 1,
+            ZIndex                 = 801,
+            Parent                 = splash,
+        }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+
+        local ringStroke = New("UIStroke", {
+            Color     = theme.Accent,
+            Thickness = 2,
+            Parent    = ring,
+        })
+
+        local ringGradient = New("UIGradient", {
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0,    1),
+                NumberSequenceKeypoint.new(0.45, 1),
+                NumberSequenceKeypoint.new(0.98, 0.1),
+                NumberSequenceKeypoint.new(1,    0.1),
+            }),
+            Parent = ringStroke,
+        })
+
+        -- Static track underneath, so the ring reads as a circle even at
+        -- the point in the sweep where most of it has faded out.
+        New("Frame", {
+            Size                   = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1,
+            ZIndex                 = 800,
+            Parent                 = ring,
+        }, {
+            New("UICorner", { CornerRadius = UDim.new(1, 0) }),
+            New("UIStroke", { Color = theme.Border, Thickness = 2, Transparency = 0.72 }),
+        })
 
         local mark = New("Frame", {
-            Size             = UDim2.fromOffset(38, 38),
-            Position         = UDim2.new(0.5, 0, 0, 22),
-            AnchorPoint      = Vector2.new(0.5, 0),
+            Size             = UDim2.fromOffset(52, 52),
+            Position         = UDim2.fromScale(0.5, 0.5),
+            AnchorPoint      = Vector2.new(0.5, 0.5),
             BackgroundColor3 = theme.Accent,
             BorderSizePixel  = 0,
-            ZIndex           = 801,
-            Parent           = splash,
+            ZIndex           = 802,
+            Parent           = ring,
         }, {
-            Corner(11),
+            Corner(16),
             Gradient(ColorSequence.new({
                 ColorSequenceKeypoint.new(0, theme.AccentSoft),
                 ColorSequenceKeypoint.new(1, theme.AccentDeep),
             }), 135),
         })
 
-        BrandMark(mark, title, opts.Logo, 20, 11, 802)
+        -- plain: a logo on the splash should be the logo, not a logo on a
+        -- coloured square inside a ring.
+        BrandMark(mark, title, opts.Logo, 26, 16, 803, opts.LogoStyle ~= "tile")
+
+        ------------------------------------------------------------
+        -- Text
+        ------------------------------------------------------------
 
         New("TextLabel", {
-            Size                   = UDim2.new(1, 0, 0, 18),
-            Position               = UDim2.fromOffset(0, 68),
+            Size                   = UDim2.new(1, 0, 0, 20),
+            Position               = UDim2.fromOffset(0, 118),
             BackgroundTransparency = 1,
             Text                   = opts.LoadingTitle or title,
             TextColor3             = theme.Text,
-            TextSize               = 14,
+            TextSize               = 18,
             Font                   = Enum.Font.GothamBold,
             ZIndex                 = 801,
             Parent                 = splash,
         })
 
+        local status = New("TextLabel", {
+            Size                   = UDim2.new(1, 0, 0, 14),
+            Position               = UDim2.fromOffset(0, 141),
+            BackgroundTransparency = 1,
+            Text                   = opts.LoadingSubtitle or "Starting up",
+            TextColor3             = theme.TextDim,
+            TextSize               = 11,
+            Font                   = Enum.Font.Gotham,
+            ZIndex                 = 801,
+            Parent                 = splash,
+        })
+
+        ------------------------------------------------------------
+        -- Progress
+        ------------------------------------------------------------
+
         local bar = New("Frame", {
-            Size             = UDim2.new(1, -60, 0, 3),
-            Position         = UDim2.new(0.5, 0, 1, -22),
+            Size             = UDim2.new(1, -64, 0, 4),
+            Position         = UDim2.new(0.5, 0, 1, -34),
             AnchorPoint      = Vector2.new(0.5, 0),
             BackgroundColor3 = theme.Elevated,
             BorderSizePixel  = 0,
+            ClipsDescendants = true,
             ZIndex           = 801,
             Parent           = splash,
         }, { Corner(2) })
@@ -6425,20 +6738,96 @@ function Nely:CreateWindow(opts)
             BorderSizePixel  = 0,
             ZIndex           = 802,
             Parent           = bar,
-        }, { Corner(2) })
+        }, {
+            Corner(2),
+            Gradient(ColorSequence.new({
+                ColorSequenceKeypoint.new(0, theme.AccentDeep),
+                ColorSequenceKeypoint.new(1, theme.AccentSoft),
+            }), 0),
+        })
 
-        splash.Size = UDim2.fromOffset(270, 108)
-        Tween(splash, { Size = UDim2.fromOffset(300, 120) }, EASE.Pop)
-        Tween(Blur, { Size = 10 }, EASE.Glide)
-        TweenService:Create(barFill, TweenInfo.new(1.05, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-            Size = UDim2.fromScale(1, 1),
-        }):Play()
+        local percent = New("TextLabel", {
+            Size                   = UDim2.new(1, -64, 0, 12),
+            Position               = UDim2.new(0.5, 0, 1, -20),
+            AnchorPoint            = Vector2.new(0.5, 0),
+            BackgroundTransparency = 1,
+            Text                   = "0%",
+            TextColor3             = theme.TextDim,
+            TextSize               = 10,
+            Font                   = Enum.Font.Code,
+            TextXAlignment         = Enum.TextXAlignment.Right,
+            ZIndex                 = 801,
+            Parent                 = splash,
+        })
 
-        task.delay(1.2, function()
-            Tween(splash, { Size = UDim2.fromOffset(270, 108), BackgroundTransparency = 1 }, EASE.Smooth)
-            task.delay(0.28, function()
+        ------------------------------------------------------------
+        -- Run it
+        ------------------------------------------------------------
+
+        Tween(splashScale, { Scale = 1 }, EASE.Spring)
+        Tween(Blur, { Size = 16 }, EASE.Glide)
+
+        local duration = opts.LoadingTime or 1.6
+        local started  = os.clock()
+        local done     = false
+
+        local spin
+        spin = RunService.RenderStepped:Connect(function(dt)
+            if done then return end
+
+            ringGradient.Rotation = (ringGradient.Rotation + dt * 220) % 360
+
+            local progress = math.clamp((os.clock() - started) / duration, 0, 1)
+            -- Ease the readout so it does not crawl at a constant rate; a
+            -- progress bar that slows near the end feels like it is waiting
+            -- on something, which is exactly what it is doing.
+            local eased = 1 - (1 - progress) ^ 3
+            barFill.Size = UDim2.fromScale(eased, 1)
+            percent.Text = math.floor(eased * 100) .. "%"
+
+            if progress < 0.34 then
+                status.Text = Icons.Loaded and "Icons ready" or "Loading icons"
+            elseif progress < 0.72 then
+                status.Text = "Building interface"
+            elseif progress < 1 then
+                status.Text = "Almost there"
+            else
+                status.Text = "Ready"
+            end
+        end)
+        table.insert(Nely.Connections, spin)
+
+        task.delay(duration + 0.15, function()
+            done = true
+            spin:Disconnect()
+            if Window.Destroyed then
+                scrim:Destroy()
                 splash:Destroy()
-                OpenWindow(true)
+                return
+            end
+
+            -- Hand off: the splash lifts and fades while the window springs
+            -- up behind it, so the two movements overlap instead of leaving
+            -- a blank frame between them.
+            Tween(splashScale, { Scale = 1.06 }, EASE.Smooth)
+            Tween(splash, { BackgroundTransparency = 1 }, EASE.Smooth)
+            Tween(scrim,  { BackgroundTransparency = 1 }, EASE.Smooth)
+            for _, child in ipairs(splash:GetDescendants()) do
+                if child:IsA("TextLabel") then
+                    Tween(child, { TextTransparency = 1 }, EASE.Snap)
+                elseif child:IsA("ImageLabel") then
+                    Tween(child, { ImageTransparency = 1 }, EASE.Snap)
+                elseif child:IsA("UIStroke") then
+                    Tween(child, { Transparency = 1 }, EASE.Snap)
+                elseif child:IsA("Frame") then
+                    Tween(child, { BackgroundTransparency = 1 }, EASE.Snap)
+                end
+            end
+
+            task.delay(0.16, function() OpenWindow(true) end)
+            task.delay(0.42, function()
+                scrim:Destroy()
+                splash:Destroy()
             end)
         end)
     else
