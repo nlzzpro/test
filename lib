@@ -436,6 +436,11 @@ end
 local LUCIDE_URL =
     "https://raw.githubusercontent.com/Footagesus/Icons/refs/heads/main/lucide/dist/Icons.lua"
 
+-- ScriptBlox mark, used for the credit pill. It is brand art rather than a
+-- Lucide glyph, so it is drawn as a plain image and never tinted.
+local SCRIPTBLOX_ICON = "rbxassetid://139960959178591"
+local SCRIPTBLOX_URL  = "https://scriptblox.com/u/"
+
 local Icons = { Set = nil, Loaded = false }
 
 do
@@ -2146,13 +2151,22 @@ function Nely:CreateWindow(opts)
             FitGameBadge()
         end)
 
-        local creditIcon = Icons.Render("github", credit, 12, theme.TextDim, 23)
-        creditIcon.Position    = UDim2.new(0, 0, 0.5, 0)
-        creditIcon.AnchorPoint = Vector2.new(0, 0.5)
+        local creditIcon = New("ImageLabel", {
+            Name                   = "CreditIcon",
+            Size                   = UDim2.fromOffset(14, 14),
+            Position               = UDim2.new(0, 0, 0.5, 0),
+            AnchorPoint            = Vector2.new(0, 0.5),
+            BackgroundTransparency = 1,
+            Image                  = opts.CreditIcon or SCRIPTBLOX_ICON,
+            ImageTransparency      = 0.25,
+            ScaleType              = Enum.ScaleType.Fit,
+            ZIndex                 = 23,
+            Parent                 = credit,
+        })
 
         local creditLabel = New("TextLabel", {
             Size                   = UDim2.fromOffset(0, 22),
-            Position               = UDim2.fromOffset(17, 0),
+            Position               = UDim2.fromOffset(19, 0),
             AutomaticSize          = Enum.AutomaticSize.X,
             BackgroundTransparency = 1,
             Text                   = opts.Credit,
@@ -2166,24 +2180,24 @@ function Nely:CreateWindow(opts)
         credit.MouseEnter:Connect(function()
             Tween(credit, { BackgroundTransparency = 0.1 }, EASE.Snap)
             Tween(creditLabel, { TextColor3 = theme.Text }, EASE.Snap)
-            TintIcon(creditIcon, theme.Accent)
+            Tween(creditIcon, { ImageTransparency = 0 }, EASE.Snap)
         end)
         credit.MouseLeave:Connect(function()
             Tween(credit, { BackgroundTransparency = 0.35 }, EASE.Snap)
             Tween(creditLabel, { TextColor3 = theme.TextDim }, EASE.Snap)
-            TintIcon(creditIcon, theme.TextDim)
+            Tween(creditIcon, { ImageTransparency = 0.25 }, EASE.Snap)
         end)
         credit.MouseButton1Click:Connect(function()
             Ripple(credit, 24)
             local copy = setclipboard or toclipboard or (syn and syn.write_clipboard)
             local url  = opts.CreditUrl
-                or ("https://github.com/" .. opts.Credit:gsub("^@", ""))
+                or (SCRIPTBLOX_URL .. opts.Credit:gsub("^@", ""))
             if copy then
                 copy(url)
                 Nely:Notify({
                     Title   = "Copied",
                     Content = url,
-                    Icon    = "github",
+                    Icon    = "link",
                     Color   = theme.Success,
                 })
             end
