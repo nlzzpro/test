@@ -420,8 +420,10 @@ end
 --==================================================================
 --  ICONS
 --
---  Icons come from Footagesus/Icons (Lucide set) — the same artwork
---  WindUI uses, so nothing here is hand-drawn or improvised.
+--  Icons are the Lucide set, mirrored on nlzzpro/nelylib — the same
+--  artwork WindUI uses, so nothing here is hand-drawn or improvised.
+--  Mirroring it means the hub does not depend on someone else's repo
+--  staying up.
 --
 --  Main-v2.lua is a loader that pulls SIX packs on startup (lucide,
 --  solar, craft, geist, sfsymbols, gravity) — seven HTTP round trips
@@ -434,7 +436,7 @@ end
 --==================================================================
 
 local LUCIDE_URL =
-    "https://raw.githubusercontent.com/Footagesus/Icons/refs/heads/main/lucide/dist/Icons.lua"
+    "https://raw.githubusercontent.com/nlzzpro/nelylib/refs/heads/main/icons"
 
 -- ScriptBlox mark, used for the credit pill. It is brand art rather than a
 -- Lucide glyph, so it is drawn as a plain image and never tinted.
