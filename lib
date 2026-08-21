@@ -6,7 +6,7 @@
 ]]
 
 local Nely = {}
-Nely.Version   = "3.3.0"
+Nely.Version   = "3.4.0"
 Nely.Flags     = {}
 Nely.Connections = {}
 Nely.Unloaded  = false
@@ -1209,6 +1209,16 @@ end
 --  DIALOG
 --==================================================================
 
+--  Options:
+--    Title, Content, Icon, Buttons
+--    Image   = "rbxassetid://..."  a picture instead of the small glyph
+--    PlaceId = 142823291           that game's thumbnail, resolved for you
+--    Align   = "center"            centres the artwork and the text
+--
+--  Image and PlaceId imply Align = "center" unless you say otherwise: a
+--  96px picture pinned to the left edge with text beside it is a different
+--  layout, and this card is not built for it.
+
 function Nely:Dialog(opts)
     opts = opts or {}
     local theme   = Nely.Theme
@@ -1216,6 +1226,12 @@ function Nely:Dialog(opts)
     local content = opts.Content or ""
     local buttons = opts.Buttons or {}
     local iconName = opts.Icon or "alert"
+
+    local bigArt   = (opts.Image ~= nil) or (opts.PlaceId ~= nil)
+    local centred  = opts.Align == "center" or (bigArt and opts.Align ~= "left")
+    local artSize  = opts.ImageSize or 96
+    local textAlign = centred and Enum.TextXAlignment.Center
+                              or  Enum.TextXAlignment.Left
 
     local overlay = New("Frame", {
         Name                   = "DialogOverlay",
@@ -1245,18 +1261,61 @@ function Nely:Dialog(opts)
     -- no Shadow() here: this card runs a UIListLayout, which would treat the
     -- shadow holder as a list item and push every child down past it.
 
-    local iconWrap = New("Frame", {
-        Size                   = UDim2.fromOffset(42, 42),
-        BackgroundColor3       = theme.Accent,
-        BackgroundTransparency = 0.86,
-        BorderSizePixel        = 0,
+    -- Artwork row. Always full width so the UIListLayout has nothing to
+    -- align: whatever sits inside is positioned by scale, which is the only
+    -- way to centre a fixed-size child under a vertical list layout.
+    local artRow = New("Frame", {
+        Size                   = UDim2.new(1, 0, 0, bigArt and artSize or 42),
+        BackgroundTransparency = 1,
         LayoutOrder            = 1,
         ZIndex                 = 703,
         Parent                 = card,
-    }, { Corner(12) })
-    local dIcon = Icons.Render(iconName, iconWrap, 22, theme.Accent, 704)
-    dIcon.Position    = UDim2.fromScale(0.5, 0.5)
-    dIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+    })
+
+    if bigArt then
+        local art = New("ImageLabel", {
+            Size                   = UDim2.fromOffset(artSize, artSize),
+            Position               = UDim2.fromScale(0.5, 0.5),
+            AnchorPoint            = Vector2.new(0.5, 0.5),
+            BackgroundColor3       = theme.Elevated,
+            BackgroundTransparency = 0.3,
+            BorderSizePixel        = 0,
+            Image                  = "",
+            ImageTransparency      = 1,
+            ScaleType              = Enum.ScaleType.Crop,
+            ZIndex                 = 704,
+            Parent                 = artRow,
+        }, {
+            Corner(math.floor(artSize * 0.22)),
+            Stroke(theme.Border, 1, 0.4),
+        })
+
+        local function Show(asset)
+            if not (asset and art.Parent) then return end
+            art.Image = asset
+            Tween(art, { ImageTransparency = 0 }, EASE.Smooth)
+        end
+
+        if opts.PlaceId then
+            ResolveGameImage({ PlaceId = opts.PlaceId }, Show)
+        else
+            ResolveImageAsync(opts.Image, Show)
+        end
+    else
+        local iconWrap = New("Frame", {
+            Size                   = UDim2.fromOffset(42, 42),
+            Position               = centred and UDim2.fromScale(0.5, 0.5) or UDim2.new(),
+            AnchorPoint            = centred and Vector2.new(0.5, 0.5) or Vector2.new(0, 0),
+            BackgroundColor3       = theme.Accent,
+            BackgroundTransparency = 0.86,
+            BorderSizePixel        = 0,
+            ZIndex                 = 703,
+            Parent                 = artRow,
+        }, { Corner(12) })
+        local dIcon = Icons.Render(iconName, iconWrap, 22, theme.Accent, 704)
+        dIcon.Position    = UDim2.fromScale(0.5, 0.5)
+        dIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+    end
 
     New("Frame", {
         Size = UDim2.new(1, 0, 0, 14), BackgroundTransparency = 1,
@@ -1270,7 +1329,7 @@ function Nely:Dialog(opts)
         TextColor3             = theme.Text,
         TextSize               = 17,
         Font                   = Enum.Font.GothamBold,
-        TextXAlignment         = Enum.TextXAlignment.Left,
+        TextXAlignment         = textAlign,
         LayoutOrder            = 3,
         ZIndex                 = 703,
         Parent                 = card,
@@ -1284,7 +1343,7 @@ function Nely:Dialog(opts)
         TextColor3             = theme.TextSub,
         TextSize               = 13,
         Font                   = Enum.Font.Gotham,
-        TextXAlignment         = Enum.TextXAlignment.Left,
+        TextXAlignment         = textAlign,
         TextYAlignment         = Enum.TextYAlignment.Top,
         TextWrapped            = true,
         LineHeight             = 1.25,
@@ -2536,9 +2595,32 @@ function Nely:CreateWindow(opts)
         Parent                 = orb,
     }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
 
-    -- Hub initial stays underneath as the fallback: it shows through until
-    -- the thumbnail resolves, and stays visible if the lookup fails.
-    BrandMark(orb, title, opts.Logo, 20, 25, 401)
+    -- Hub initial and logo, in their own holder so they can be taken away
+    -- as a unit. They are the fallback only: they show while the thumbnail
+    -- is still resolving, and stay if the lookup never returns.
+    local orbBrand = New("Frame", {
+        Name                   = "OrbBrand",
+        Size                   = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        ZIndex                 = 401,
+        Parent                 = orb,
+    })
+
+    BrandMark(orbBrand, title, opts.Logo, 20, 25, 401)
+
+    -- The thumbnail is inset 5px inside the disc, so anything left lit
+    -- underneath it shows as a ring around the edge. With a hub logo set,
+    -- that read as the two logos layered on top of each other. Once the
+    -- orb has a picture of its own, the brand goes.
+    local function ClearOrbBrand()
+        for _, child in ipairs(orbBrand:GetDescendants()) do
+            if child:IsA("TextLabel") then
+                Tween(child, { TextTransparency = 1 }, EASE.Smooth)
+            elseif child:IsA("ImageLabel") then
+                Tween(child, { ImageTransparency = 1 }, EASE.Smooth)
+            end
+        end
+    end
 
     ------------------------------------------------------------
     -- What the orb shows
@@ -2561,6 +2643,7 @@ function Nely:CreateWindow(opts)
             if asset and orbImage.Parent then
                 orbImage.Image = asset
                 Tween(orbImage, { ImageTransparency = 0 }, EASE.Smooth)
+                ClearOrbBrand()
             end
         end)
     else
@@ -2568,6 +2651,7 @@ function Nely:CreateWindow(opts)
             if asset and orbImage.Parent then
                 orbImage.Image = asset
                 Tween(orbImage, { ImageTransparency = 0 }, EASE.Smooth)
+                ClearOrbBrand()
             end
         end)
     end
@@ -5363,7 +5447,7 @@ function Nely:CreateWindow(opts)
                 Size                   = UDim2.new(1, -100, 0, 20),
                 Position               = UDim2.fromOffset(82, 17),
                 BackgroundTransparency = 1,
-                Text                   = "Hello, " .. LocalPlayer.DisplayName,
+                Text                   = "What's up, " .. LocalPlayer.DisplayName,
                 TextColor3             = theme.Text,
                 TextSize               = 17,
                 Font                   = Enum.Font.GothamBold,
