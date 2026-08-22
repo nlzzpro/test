@@ -2874,45 +2874,53 @@ function Nely:CreateWindow(opts)
 
         Window._tabOrder = Window._tabOrder + 1
 
-        -- Icon and title share one horizontal layout. Previously the icon
-        -- was centred while the title was bottom-aligned in a full-height
-        -- label, which stacked them instead of setting them side by side.
-        local header = New("Frame", {
-            Name                   = "Section",
-            Size                   = UDim2.new(1, 0, 0, 30),
-            BackgroundTransparency = 1,
-            LayoutOrder            = Window._tabOrder,
-            ZIndex                 = 17,
-            Parent                 = tabList,
-        }, {
-            New("UIListLayout", {
-                Padding           = UDim.new(0, 6),
-                FillDirection     = Enum.FillDirection.Horizontal,
-                VerticalAlignment = Enum.VerticalAlignment.Center,
-                SortOrder         = Enum.SortOrder.LayoutOrder,
-            }),
-            Pad(10, 0, 5, 0),
-        })
+        -- The sidebar reads as tab icons alone. A section is a grouping and
+        -- an ordering device, not something that has to announce itself, so
+        -- the caption row is off unless a caller opts back in with
+        -- ShowTitle = true. The order slot is still consumed either way, so
+        -- tabs stay in the sequence their sections were declared in.
+        local header
+        if sectionOpts.ShowTitle then
+            -- Icon and title share one horizontal layout. Previously the icon
+            -- was centred while the title was bottom-aligned in a full-height
+            -- label, which stacked them instead of setting them side by side.
+            header = New("Frame", {
+                Name                   = "Section",
+                Size                   = UDim2.new(1, 0, 0, 30),
+                BackgroundTransparency = 1,
+                LayoutOrder            = Window._tabOrder,
+                ZIndex                 = 17,
+                Parent                 = tabList,
+            }, {
+                New("UIListLayout", {
+                    Padding           = UDim.new(0, 6),
+                    FillDirection     = Enum.FillDirection.Horizontal,
+                    VerticalAlignment = Enum.VerticalAlignment.Center,
+                    SortOrder         = Enum.SortOrder.LayoutOrder,
+                }),
+                Pad(10, 0, 5, 0),
+            })
 
-        if sectionOpts.Icon then
-            local mark = Icons.Render(sectionOpts.Icon, header, 12, theme.TextDim, 18)
-            mark.LayoutOrder = 1
+            if sectionOpts.Icon then
+                local mark = Icons.Render(sectionOpts.Icon, header, 12, theme.TextDim, 18)
+                mark.LayoutOrder = 1
+            end
+
+            New("TextLabel", {
+                Size                   = UDim2.fromOffset(0, 14),
+                AutomaticSize          = Enum.AutomaticSize.X,
+                BackgroundTransparency = 1,
+                Text                   = string.upper(sectionOpts.Title or "Section"),
+                TextColor3             = theme.TextDim,
+                TextSize               = 10,
+                Font                   = Enum.Font.GothamBold,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                TextYAlignment         = Enum.TextYAlignment.Center,
+                LayoutOrder            = 2,
+                ZIndex                 = 18,
+                Parent                 = header,
+            })
         end
-
-        New("TextLabel", {
-            Size                   = UDim2.fromOffset(0, 14),
-            AutomaticSize          = Enum.AutomaticSize.X,
-            BackgroundTransparency = 1,
-            Text                   = string.upper(sectionOpts.Title or "Section"),
-            TextColor3             = theme.TextDim,
-            TextSize               = 10,
-            Font                   = Enum.Font.GothamBold,
-            TextXAlignment         = Enum.TextXAlignment.Left,
-            TextYAlignment         = Enum.TextYAlignment.Center,
-            LayoutOrder            = 2,
-            ZIndex                 = 18,
-            Parent                 = header,
-        })
 
         local Section = { Title = sectionOpts.Title, Tabs = {}, _header = header }
 
