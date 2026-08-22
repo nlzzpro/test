@@ -44380,6 +44380,15 @@ local function instantiateNode(node)
         inst = res
         applyProps(inst, node.Props, { RelCF = true })
     end
+    -- Name lives beside Props on the node, not inside it, so applyProps
+    -- never saw it and every instance kept Roblox's default name: the
+    -- chroma decal came out called "Decal" instead of "Chroma". That broke
+    -- chroma detection, which looks for a decal named chroma, and the
+    -- animation silently fell back to tinting the root part -- invisible
+    -- underneath an opaque mesh texture.
+    if node.Name and node.Name ~= "" then
+        pcall(function() inst.Name = node.Name end)
+    end
     chromaTag(inst, node)
     return inst
 end
