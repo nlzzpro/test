@@ -1042,16 +1042,49 @@ end
 
 --------------------------------------------------------------------
 
+-- url -> { path = "nely_cache/123.png", asset = "rbxasset://..." }
+-- The path is what makes the entry verifiable; the asset string alone
+-- cannot tell you whether the file behind it still exists.
 local remoteCache = {}
 
+local function cachePath(url)
+    local hash = 5381
+    for i = 1, #url do
+        hash = (hash * 33 + string.byte(url, i)) % 4294967296
+    end
+    return ("nely_cache/%d.png"):format(hash)
+end
+
 local function CacheRemoteImage(url)
-    if remoteCache[url] then return remoteCache[url] end
+    -- Re-verify rather than trust the memo. Deleting the workspace folder
+    -- used to leave every cached image pointing at a file that was no
+    -- longer there, with no way to recover short of rejoining.
+    local hit = remoteCache[url]
+    if hit then
+        if isfile and isfile(hit.path) then
+            return hit.asset
+        end
+        remoteCache[url] = nil       -- file went away; fall through and refetch
+    end
+
+    if not (writefile and getcustomasset and isfolder and makefolder) then
+        return nil
+    end
+
+    local path = cachePath(url)
+
+    -- Already on disk from an earlier session: reuse it, no HTTP at all.
+    if isfile and isfile(path) then
+        local okReuse, asset = pcall(getcustomasset, path)
+        if okReuse and asset then
+            remoteCache[url] = { path = path, asset = asset }
+            return asset
+        end
+    end
 
     local httpRequest = (syn and syn.request) or (http and http.request)
                         or http_request or request
-    if not (httpRequest and writefile and getcustomasset and isfolder and makefolder) then
-        return nil
-    end
+    if not httpRequest then return nil end
 
     local ok, asset = pcall(function()
         if not isfolder("nely_cache") then makefolder("nely_cache") end
@@ -1063,18 +1096,12 @@ local function CacheRemoteImage(url)
         local body = response and (response.Body or response.body)
         if not body or #body == 0 then return nil end
 
-        local hash = 5381
-        for i = 1, #url do
-            hash = (hash * 33 + string.byte(url, i)) % 4294967296
-        end
-
-        local path = ("nely_cache/%d.png"):format(hash)
         writefile(path, body)
         return getcustomasset(path)
     end)
 
     if ok and asset then
-        remoteCache[url] = asset
+        remoteCache[url] = { path = path, asset = asset }
         return asset
     end
     return nil
@@ -4992,12 +5019,22 @@ function Nely:CreateWindow(opts)
             end
 
             pill.MouseButton1Click:Connect(function()
-                -- The mouse-down half of this very click already cancelled
-                -- THIS pill; do not turn the release into a re-open.
+                -- The mouse-down half of this click already stopped THIS
+                -- pill listening; the release must not re-open it. Whether
+                -- that stop cleared or cancelled is decided in InputBegan.
                 if KeybindCancelBy == pill and os.clock() - KeybindCancelAt < 0.2 then
                     return
                 end
-                if listening then StopListening(true) return end
+                if listening then
+                    -- Second click on a listening pill CLEARS the bind.
+                    -- Escape remains the way to back out and keep the key.
+                    current, restore = "Unknown", "Unknown"
+                    StopListening(false)
+                    api.CurrentBind = current
+                    if flag then Nely.Flags[flag] = current end
+                    if cfg.OnChanged then task.spawn(cfg.OnChanged, nil) end
+                    return
+                end
                 StartListening()
             end)
 
@@ -5013,12 +5050,20 @@ function Nely:CreateWindow(opts)
             local inputConn = UserInputService.InputBegan:Connect(function(input, processed)
                 if listening then
                     local it = input.UserInputType
-                    -- ANY pointer press cancels, wherever it lands. Mouse
-                    -- buttons are never accepted as binds.
+                    -- A pointer press elsewhere cancels and keeps the key.
+                    -- A press ON this pill is handled by the click handler
+                    -- above, which clears instead -- so it is skipped here.
                     if it == Enum.UserInputType.MouseButton1
                     or it == Enum.UserInputType.MouseButton2
                     or it == Enum.UserInputType.MouseButton3
                     or it == Enum.UserInputType.Touch then
+                        local m = UserInputService:GetMouseLocation()
+                        local a, sz = pill.AbsolutePosition, pill.AbsoluteSize
+                        local onPill = m.X >= a.X and m.X <= a.X + sz.X
+                                   and m.Y >= a.Y - 36 and m.Y <= a.Y + sz.Y - 36
+                        if onPill and it == Enum.UserInputType.MouseButton1 then
+                            return          -- let the click handler clear it
+                        end
                         StopListening(true)
                         return
                     end
@@ -5050,7 +5095,8 @@ function Nely:CreateWindow(opts)
                 -- Not listening: this is the bind firing. Once per press.
                 if processed then return end
                 if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-                if current == "None" or input.KeyCode.Name ~= current then return end
+                if current == "None" or current == "Unknown" then return end
+                if input.KeyCode.Name ~= current then return end
                 if cfg.Callback then task.spawn(cfg.Callback) end
             end)
             table.insert(Nely.Connections, inputConn)
