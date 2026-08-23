@@ -44447,6 +44447,134 @@ local function buildFullOverlay(data)
     return { root = root, parts = parts }
 end
 
+-------------------------------------------------------------------------------
+-- Held-item positioning
+-------------------------------------------------------------------------------
+
+-- Orientation the game itself specifies for a weapon, if any. Returns nil
+-- when the item has no opinion, which is most of them.
+local function metaAngles(data)
+    local m = data and data.Meta
+    local a = m and m.Angles
+    if not a then return nil end
+    return CFrame.Angles(tonumber(a.X) or 0, tonumber(a.Y) or 0, tonumber(a.Z) or 0)
+end
+
+-- The weapon's inventory icon, normalised to something Roblox will load.
+-- The database stores two legacy URL shapes; both carry the asset id.
+local function metaImage(data)
+    local m = data and data.Meta
+    local img = m and m.Image
+    if type(img) ~= "string" or img == "" then return nil end
+    local id = img:match("assetId=(%d+)") or img:match("[?&]id=(%d+)")
+    if id then return "rbxassetid://" .. id end
+    return img
+end
+
+-- Hand-tuned corrections, applied AFTER the automatic passes and after
+-- Meta.Angles. Only needed where the game's own data is absent or wrong;
+-- an absent entry means the passes above already got it right.
+--
+--   GRIP["Chroma Darkbringer"] = {
+--       CFrame = CFrame.Angles(0, math.rad(90), 0),  -- extra rotation
+--       Offset = Vector3.new(0, -0.2, 0),            -- extra shift
+--       Scale  = 1.0,                                -- rarely needed
+--       Raw    = true,   -- skip the automatic passes entirely for this item
+--   }
+local GRIP = {}
+
+-- Bounding box of a built overlay expressed in ROOT-LOCAL space. Parts are
+-- placed at targetCF * relcf, so relcf IS the root-local transform; the
+-- root itself contributes its own half-extents at identity.
+local function overlayBounds(built)
+    local minV, maxV
+    local function acc(cf, size)
+        local half = size / 2
+        -- Axis-aligned extent of a rotated box: project each half-extent
+        -- onto the root axes. Cheap and exact enough for placement.
+        local r = Vector3.new(
+            math.abs(cf.RightVector.X)   * half.X + math.abs(cf.UpVector.X) * half.Y + math.abs(cf.LookVector.X) * half.Z,
+            math.abs(cf.RightVector.Y)   * half.X + math.abs(cf.UpVector.Y) * half.Y + math.abs(cf.LookVector.Y) * half.Z,
+            math.abs(cf.RightVector.Z)   * half.X + math.abs(cf.UpVector.Z) * half.Y + math.abs(cf.LookVector.Z) * half.Z)
+        local lo, hi = cf.Position - r, cf.Position + r
+        minV = minV and Vector3.new(math.min(minV.X, lo.X), math.min(minV.Y, lo.Y), math.min(minV.Z, lo.Z)) or lo
+        maxV = maxV and Vector3.new(math.max(maxV.X, hi.X), math.max(maxV.Y, hi.Y), math.max(maxV.Z, hi.Z)) or hi
+    end
+
+    if built.root then acc(CFrame.new(), built.root.Size) end
+    for _, p in ipairs(built.parts or {}) do
+        if p.inst and p.relcf then
+            local ok, sz = pcall(function() return p.inst.Size end)
+            if ok and sz then acc(p.relcf, sz) end
+        end
+    end
+    if not minV then return Vector3.zero, Vector3.one end
+    return (minV + maxV) / 2, (maxV - minV)
+end
+
+-- Index of the largest component, and its value.
+local function longestAxis(v)
+    if v.X >= v.Y and v.X >= v.Z then return "X", v.X end
+    if v.Y >= v.X and v.Y >= v.Z then return "Y", v.Y end
+    return "Z", v.Z
+end
+
+-- Rotation that brings the overlay's long axis onto the handle's long
+-- axis. Handles are modelled long-on-Y or long-on-Z depending on the
+-- weapon, so this cannot be a constant.
+local function axisMatch(overlaySize, handleSize)
+    local oa = longestAxis(overlaySize)
+    local ha = longestAxis(handleSize)
+    if oa == ha then return CFrame.new() end
+    if (oa == "Y" and ha == "Z") or (oa == "Z" and ha == "Y") then
+        return CFrame.Angles(math.rad(90), 0, 0)
+    end
+    if (oa == "X" and ha == "Z") or (oa == "Z" and ha == "X") then
+        return CFrame.Angles(0, math.rad(90), 0)
+    end
+    return CFrame.Angles(0, 0, math.rad(90))
+end
+
+-- The transform to hand finalizeOverlay so the skin sits in the hand the
+-- way the real weapon does.
+local function gripCFrame(built, handle, skinName, data)
+    local rule = GRIP[skinName]
+    local base = handle.CFrame
+
+    if rule and rule.Raw then
+        return base * (rule.CFrame or CFrame.new()) + (rule.Offset or Vector3.zero)
+    end
+
+    local centre, size = overlayBounds(built)
+
+    -- The game's own orientation for this weapon wins over the generic
+    -- axis guess: it is authored data, the axis match is an inference.
+    local rot = metaAngles(data)
+    if not rot then
+        local okSize, handleSize = pcall(function() return handle.Size end)
+        if okSize and handleSize then
+            rot = axisMatch(size, handleSize)
+        else
+            rot = CFrame.new()
+        end
+    end
+
+    -- Align centres, not origins. `centre` is where the model's mass sits
+    -- relative to its own root, so subtracting it puts the model's middle
+    -- on the handle's middle whatever pivot the author used.
+    local cf = base * rot * CFrame.new(-centre.X, -centre.Y, -centre.Z)
+
+    if rule then
+        cf = cf * (rule.CFrame or CFrame.new())
+        if rule.Offset then cf = cf + rule.Offset end
+    end
+    return cf
+end
+
+-- Exposed so the positioning can be measured and tuned against the real
+-- game rather than guessed at.
+local GripAPI = { Table = GRIP, Bounds = overlayBounds, Compute = gripCFrame }
+
 -- PHASE 2: SYNCHRONOUS. Place root at targetCF, children at targetCF*RelCF, weld.
 local function finalizeOverlay(built, targetCF)
     local root = built.root
@@ -44593,7 +44721,8 @@ local function apply(slot, name)
     if not built or not built.root or token[slot] ~= myToken or not base.Parent then
         restore(hidden); if built and built.root then built.root:Destroy() end; return
     end
-    finalizeOverlay(built, base.CFrame)                       -- phase 2 (fresh CFrame, synchronous)
+    -- Same alignment as the in-round path: centres, not origins.
+    finalizeOverlay(built, gripCFrame(built, base, name, data))
     local overlay = built.root
     overlay.Parent = base.Parent or base
     local w = Instance.new("WeldConstraint"); w.Part0 = overlay; w.Part1 = base; w.Parent = overlay
@@ -44610,11 +44739,31 @@ local function isMine(inst)
     if inst:IsDescendantOf(LocalPlayer) then return true end
     local c = char(); return c ~= nil and inst:IsDescendantOf(c)
 end
+-- Applies the equipped skin's inventory picture to a Tool, remembering
+-- what was there so it can be put back. Independent of the 3D overlay.
+local function applyToolIcon(tool, skin)
+    if not skin then return nil end
+    local info = MESHES[skin] or WeaponDB[skin]
+    local icon = metaImage(info)
+    if not icon then return nil end
+    local previous = tool.TextureId
+    local ok = pcall(function() tool.TextureId = icon end)
+    return ok and previous or nil
+end
+
 local function overlayTool(tool, slot)
     if toolState[tool] then return end
     local handle = tool:FindFirstChild("Handle") or tool:WaitForChild("Handle", 5)
     if not handle then return end
     local skin = ProfileData.Weapons.Equipped[slot]
+
+    -- Icon first, before anything that can bail out. Every item in the
+    -- database has one, including the Uniques that have no mesh.
+    local prevTexture = applyToolIcon(tool, skin)
+    if prevTexture then
+        toolState[tool] = { texture = prevTexture }
+    end
+
     local data = skin and MESHES[skin]
     if not data then return end
     local built = buildAnyOverlay(data)              -- phase 1 (may yield)
@@ -44622,17 +44771,40 @@ local function overlayTool(tool, slot)
     local hidden = {}
     hideInto(hidden, handle)
     for _, d in ipairs(handle:GetDescendants()) do hideInto(hidden, d) end
-    finalizeOverlay(built, handle.CFrame)            -- phase 2 (fresh handle CFrame, synchronous)
+    -- Aligned, not merely co-located: see gripCFrame.
+    finalizeOverlay(built, gripCFrame(built, handle, skin, data))
     local overlay = built.root
     overlay.Parent = handle
     local w = Instance.new("WeldConstraint"); w.Part0 = overlay; w.Part1 = handle; w.Parent = overlay
     local chroma = isChroma(skin, data) and startChroma(overlay) or nil
-    toolState[tool] = { overlay = overlay, hidden = hidden, chroma = chroma }
+
+    -- Keep whatever texture was recorded above; the icon was applied
+    -- before the overlay was built.
+    local existing = toolState[tool]
+    toolState[tool] = { overlay = overlay, hidden = hidden, chroma = chroma,
+                        texture = existing and existing.texture or nil }
 end
+-- Re-applies whatever is equipped now. Called when the skin changes while
+-- the tool is still in hand, which the plain add/remove watcher misses --
+-- the Tool never leaves the character, so nothing else would fire.
+local function refreshTool(tool, slot)
+    if not tool or not tool.Parent then return end
+    local st = toolState[tool]
+    if st then
+        if st.chroma then pcall(function() st.chroma:Disconnect() end) end
+        if st.overlay then pcall(function() st.overlay:Destroy() end) end
+        if st.texture then pcall(function() tool.TextureId = st.texture end) end
+        restore(st.hidden)
+        toolState[tool] = nil
+    end
+    overlayTool(tool, slot)
+end
+
 local function unoverlayTool(tool)
     local st = toolState[tool]; if not st then return end
     if st.chroma then pcall(function() st.chroma:Disconnect() end) end
     if st.overlay then pcall(function() st.overlay:Destroy() end) end
+    if st.texture then pcall(function() tool.TextureId = st.texture end) end
     restore(st.hidden)
     toolState[tool] = nil
 end
@@ -44783,6 +44955,30 @@ end
 -------------------------------------------------------------------------------
 local API = {}
 
+-- Held-item positioning. GripAPI.Table is the per-item override map:
+-- writing to it takes effect on the next equip, which is what makes
+-- measuring against the real game practical.
+API.Grip    = GripAPI
+-- Re-skins whatever the character is holding right now. The equip path
+-- calls this so switching skins mid-round updates the held weapon and its
+-- backpack icon without needing to unequip.
+API.RefreshHeld = function()
+    local c = char(); if not c then return false end
+    local n = 0
+    for _, t in ipairs(c:GetChildren()) do
+        if t:IsA("Tool") then
+            local slot = (t.Name == "Gun") and "Gun" or "Knife"
+            pcall(refreshTool, t, slot)
+            n = n + 1
+        end
+    end
+    return n > 0
+end
+
+API.IconFor = function(key)
+    local data = MESHES[key] or WeaponDB[key]
+    return metaImage(data)
+end
 API.Meshes  = MESHES
 API.Weapons = WeaponDB
 API.List    = weaponList
