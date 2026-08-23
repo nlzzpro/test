@@ -1713,7 +1713,7 @@ function Nely:CreateWindow(opts)
     -- which defeats the point of having names at all. Widened to fit the
     -- longest label a hub realistically uses; the rail toggle is still
     -- there for anyone who wants the space back.
-    local sidebarW = opts.SidebarWidth or (compact and 150 or 182)
+    local sidebarW = opts.SidebarWidth or (compact and 156 or 196)
     local topbarH  = compact and 42 or 46
 
     -- Rows are taller on desktop than the previous build. Paired with the
@@ -3860,18 +3860,19 @@ function Nely:CreateWindow(opts)
                 Size             = UDim2.fromOffset(15, 15),
                 Position         = UDim2.new(0, state and 20 or 3, 0.5, 0),
                 AnchorPoint      = Vector2.new(0, 0.5),
-                BackgroundColor3 = Color3.new(1, 1, 1),
+                BackgroundColor3 = state and theme.Backdrop or Color3.new(1, 1, 1),
                 BorderSizePixel  = 0,
                 ZIndex           = 19,
                 Parent           = track,
             }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
 
-            -- Check sits on the empty side of the track and fades with the
-            -- state, so "on" reads at a glance instead of only from the
-            -- knob's position.
-            local tick = Icons.Render("check", track, 11, Color3.new(1, 1, 1), 19)
-            tick.Position         = UDim2.fromOffset(5, 3)
-            tick.ImageTransparency = state and 0.15 or 1
+            -- No glyph inside the switch. On a light accent (the grey
+            -- theme's platinum) a white check disappears, and on a dark
+            -- one it is redundant next to the knob. The state is carried
+            -- by inverting the knob instead, which works in every theme:
+            --   off -> dark track, light knob
+            --   on  -> light track, dark knob
+            -- so there is always full contrast whichever way it sits.
 
             local hit = New("TextButton", {
                 Size                   = UDim2.fromScale(1, 1),
@@ -3887,8 +3888,10 @@ function Nely:CreateWindow(opts)
             local function Apply(value, fire)
                 state = value
                 Tween(track, { BackgroundColor3 = state and theme.Accent or theme.Elevated }, EASE.Snap)
-                Tween(knob, { Position = UDim2.new(0, state and 20 or 3, 0.5, 0) }, EASE.Pop)
-                Tween(tick, { ImageTransparency = state and 0.15 or 1 }, EASE.Snap)
+                Tween(knob, {
+                    Position         = UDim2.new(0, state and 20 or 3, 0.5, 0),
+                    BackgroundColor3 = state and theme.Backdrop or Color3.new(1, 1, 1),
+                }, EASE.Pop)
                 if flag then
                     Nely.Flags[flag] = state
                     -- anything that declared Depends = "<flag>" greys itself
@@ -5340,26 +5343,22 @@ function Nely:CreateWindow(opts)
                         ZIndex                 = 22,
                         Parent                 = art,
                     })
-                    -- Fade the picture in and the initial out, but only
-                    -- once the image has actually decoded. Hiding the
-                    -- letter on creation would leave an empty tile for
-                    -- every broken or slow asset; leaving it up forever
-                    -- shows an initial stamped across the artwork.
+                    -- Hide the initial straight away and fade the picture
+                    -- in. Waiting on IsLoaded first was the obvious order
+                    -- and it was wrong: the artwork is scaled to Fit, so
+                    -- the letter kept showing through the empty margins
+                    -- around a loaded image, and IsLoaded proved
+                    -- unreliable for rbxthumb assets anyway.
+                    --
+                    -- The letter only comes back if the asset genuinely
+                    -- never decodes, which is the case it exists for.
+                    letter.TextTransparency = 1
+                    Tween(pic, { ImageTransparency = 0 }, EASE.Smooth)
                     task.spawn(function()
-                        local deadline = os.clock() + 6
-                        while os.clock() < deadline and pic.Parent do
-                            if pic.IsLoaded then
-                                Tween(pic, { ImageTransparency = 0 }, EASE.Smooth)
-                                Tween(letter, { TextTransparency = 1 }, EASE.Smooth)
-                                return
-                            end
-                            task.wait(0.1)
-                        end
-                        -- never decoded: show it anyway in case IsLoaded
-                        -- is unreliable for this asset type, and keep the
-                        -- letter as a backstop
-                        if pic.Parent then
-                            Tween(pic, { ImageTransparency = 0 }, EASE.Smooth)
+                        task.wait(6)
+                        if pic.Parent and not pic.IsLoaded then
+                            Tween(pic, { ImageTransparency = 1 }, EASE.Smooth)
+                            Tween(letter, { TextTransparency = 0.35 }, EASE.Smooth)
                         end
                     end)
                 end
@@ -5432,7 +5431,11 @@ function Nely:CreateWindow(opts)
                 end)
                 card.MouseButton1Click:Connect(function()
                     Ripple(card, 22)
-                    if cfg.OnSelect then task.spawn(cfg.OnSelect, item.Id or item.Name, item) end
+                    -- OnSelect matches GameGrid; Callback matches every
+                    -- other control in this library. Both are accepted so
+                    -- neither habit silently does nothing.
+                    local fn = cfg.OnSelect or cfg.Callback
+                    if fn then task.spawn(fn, item.Id or item.Name, item) end
                 end)
                 return card
             end
