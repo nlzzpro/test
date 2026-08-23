@@ -338,6 +338,8 @@ end
 
 local STRINGS = {
     en = {
+        ["settings.colored"] = "Colored UI",
+        ["settings.desc.colored"] = "Tab icons and enabled toggles use the theme accent instead of platinum",
         ["common.search"]           = "Search",
         ["common.close"]            = "Close",
         ["common.cancel"]           = "Cancel",
@@ -384,6 +386,8 @@ local STRINGS = {
     },
 
     fr = {
+        ["settings.colored"] = "Interface color\u{00E9}e",
+        ["settings.desc.colored"] = "Les ic\u{00F4}nes et les interrupteurs actifs utilisent la couleur du th\u{00E8}me",
         ["common.search"]           = "Rechercher",
         ["common.close"]            = "Fermer",
         ["common.cancel"]           = "Annuler",
@@ -430,6 +434,8 @@ local STRINGS = {
     },
 
     es = {
+        ["settings.colored"] = "Interfaz de color",
+        ["settings.desc.colored"] = "Los iconos y los interruptores activos usan el color del tema",
         ["common.search"]           = "Buscar",
         ["common.close"]            = "Cerrar",
         ["common.cancel"]           = "Cancelar",
@@ -476,6 +482,8 @@ local STRINGS = {
     },
 
     ru = {
+        ["settings.colored"] = "\u{0426}\u{0432}\u{0435}\u{0442}\u{043D}\u{043E}\u{0439} \u{0438}\u{043D}\u{0442}\u{0435}\u{0440}\u{0444}\u{0435}\u{0439}\u{0441}",
+        ["settings.desc.colored"] = "\u{0418}\u{043A}\u{043E}\u{043D}\u{043A}\u{0438} \u{0438} \u{0432}\u{043A}\u{043B}\u{044E}\u{0447}\u{0451}\u{043D}\u{043D}\u{044B}\u{0435} \u{043F}\u{0435}\u{0440}\u{0435}\u{043A}\u{043B}\u{044E}\u{0447}\u{0430}\u{0442}\u{0435}\u{043B}\u{0438} \u{0438}\u{0441}\u{043F}\u{043E}\u{043B}\u{044C}\u{0437}\u{0443}\u{044E}\u{0442} \u{0446}\u{0432}\u{0435}\u{0442} \u{0442}\u{0435}\u{043C}\u{044B}",
         ["common.search"]           = "\u{041F}\u{043E}\u{0438}\u{0441}\u{043A}",
         ["common.close"]            = "\u{0417}\u{0430}\u{043A}\u{0440}\u{044B}\u{0442}\u{044C}",
         ["common.cancel"]           = "\u{041E}\u{0442}\u{043C}\u{0435}\u{043D}\u{0430}",
@@ -606,6 +614,59 @@ function Nely:SetLanguage(code)
 end
 
 function Nely:GetLanguages() return Nely.Languages end
+
+--==================================================================
+--  COLORED UI
+--
+--  OFF (default): the interface is metallic. Sidebar icons are muted
+--  silver, the active one is platinum, and an enabled toggle is platinum.
+--
+--  ON: those same elements take the CURRENT THEME's accent -- Crimson
+--  turns them red, Frost blue. Not random per-element colours; the one
+--  colour the user chose.
+--==================================================================
+
+Nely.ColoredUI = false
+
+-- Anything whose colour depends on the theme AND on this switch registers
+-- a repainter. Both SetTheme and SetColoredUI walk this list, which is why
+-- existing controls update in place rather than needing a rebuild.
+local Accented = {}
+
+local function RegisterAccent(fn)
+    table.insert(Accented, fn)
+    pcall(fn)
+    return function()
+        for i, entry in ipairs(Accented) do
+            if entry == fn then table.remove(Accented, i) return end
+        end
+    end
+end
+Nely.RegisterAccent = RegisterAccent
+
+local function RepaintAccents()
+    for i = #Accented, 1, -1 do
+        local ok = pcall(Accented[i])
+        -- A repainter that throws belongs to a destroyed control.
+        if not ok then table.remove(Accented, i) end
+    end
+end
+Nely.RepaintAccents = RepaintAccents
+
+-- The colour an accent-bearing element should use right now.
+function Nely.AccentColor()
+    local t = Nely.Theme or {}
+    if Nely.ColoredUI then return t.Accent or Color3.fromRGB(205, 210, 222) end
+    -- Metallic mode: platinum regardless of the theme's own accent.
+    local m = Nely.Themes and Nely.Themes.Metallic
+    return (m and m.Accent) or Color3.fromRGB(205, 210, 222)
+end
+
+function Nely:SetColoredUI(state)
+    Nely.ColoredUI = state and true or false
+    RepaintAccents()
+    return Nely.ColoredUI
+end
 
 --==================================================================
 --  ANIMATION PRESETS
@@ -1079,6 +1140,44 @@ local function ResolveGameImage(entry, callback)
     end
 end
 
+--------------------------------------------------------------------
+--  KEYBIND STATE (shared across every keybind control)
+--------------------------------------------------------------------
+
+-- Keys a bind will accept. A modifier alone is not a shortcut, and
+-- Unknown is what Roblox reports for input it could not classify.
+-- Escape is excluded here as well as handled explicitly, so it can never
+-- be bound by any path.
+local NON_BINDABLE = {
+    [Enum.KeyCode.Unknown]      = true,
+    [Enum.KeyCode.Escape]       = true,
+    [Enum.KeyCode.LeftShift]    = true,
+    [Enum.KeyCode.RightShift]   = true,
+    [Enum.KeyCode.LeftControl]  = true,
+    [Enum.KeyCode.RightControl] = true,
+    [Enum.KeyCode.LeftAlt]      = true,
+    [Enum.KeyCode.RightAlt]     = true,
+    [Enum.KeyCode.LeftSuper]    = true,
+    [Enum.KeyCode.RightSuper]   = true,
+    [Enum.KeyCode.CapsLock]     = true,
+    [Enum.KeyCode.NumLock]      = true,
+}
+
+local function AcceptableKey(keyCode)
+    return not NON_BINDABLE[keyCode]
+end
+
+-- Exactly one keybind may listen at a time. Holds the api of whichever
+-- control currently owns the keyboard; starting a new listen cancels it.
+local ActiveKeybind = nil
+
+-- Which pill last cancelled itself on a mouse-DOWN, and when. The
+-- mouse-UP that follows lands on that same pill and would otherwise
+-- re-open it. Keyed by pill, not global, so clicking keybind B while A is
+-- listening cancels A and still opens B.
+local KeybindCancelBy = nil
+local KeybindCancelAt = 0
+
 --==================================================================
 --  INTERACTION HELPERS
 --==================================================================
@@ -1189,8 +1288,13 @@ Root.Parent = ResolveParent()
 Nely.Root = Root
 
 -- Acrylic backdrop blur
-local Blur = New("BlurEffect", { Name = "NelyBlur", Size = 0, Parent = Lighting })
-Nely.Blur = Blur
+-- Deliberately NOT parented to Lighting. The game behind the interface
+-- stays sharp; the window carries its own translucency instead.
+local Blur = Instance.new("BlurEffect")
+Blur.Name    = "NelyBlur"
+Blur.Size    = 0
+Blur.Enabled = false
+Nely.Blur    = Blur
 
 --==================================================================
 --  CUSTOM CURSOR
@@ -3157,7 +3261,6 @@ function Nely:CreateWindow(opts)
         local fromOrb    = Window.Minimized
         Window.Minimized = false
         shell.Visible    = true
-        Tween(Blur, { Size = 14 }, EASE.Glide)
 
         -- The orb used to blink out of existence. It now retracts, which
         -- also covers the moment the shell is growing over the top of it.
@@ -3199,7 +3302,6 @@ function Nely:CreateWindow(opts)
     local function MinimizeWindow()
         if Window.Minimized then return end
         Window.Minimized = true
-        Tween(Blur, { Size = 0 }, EASE.Smooth)
 
         homePosition = shell.Position
 
@@ -3222,7 +3324,6 @@ function Nely:CreateWindow(opts)
         Window.Destroyed = true
         UserInputService.MouseIconEnabled = true
 
-        Tween(Blur, { Size = 0 }, EASE.Smooth)
         -- Back/In: a small swell, then away. Fading the backdrop at the
         -- same time stops the last few frames looking like a hard cut.
         Tween(shellScale, { Scale = 0 }, EASE.Collapse)
@@ -3369,10 +3470,54 @@ function Nely:CreateWindow(opts)
     -- let this walk the hue wheel by golden ratio, which spaces any number
     -- of tabs apart without two ever landing on the same colour. Value and
     -- saturation stay fixed so nothing shouts louder than its neighbours.
+    -- Kept for hubs that explicitly want per-tab hues (ColorfulTabs), but
+    -- it is no longer what a tab gets by default -- twelve unrelated
+    -- rainbow glyphs is not the Nely look.
     local function AutoHue(index)
         local hue = ((index - 1) * 0.618033988749895) % 1
         return Color3.fromHSV(hue, 0.55, 1)
     end
+
+    -- Paints every sidebar row for the current selection, theme and
+    -- Colored UI state. Registered as an accent repainter below, which is
+    -- what makes the sidebar follow those switches live.
+    local function PaintSidebar(animate)
+        local ease = (animate == false) and EASE.Instant or EASE.Snap
+        local accent = Nely.AccentColor()
+        for _, tab in ipairs(Window.Tabs) do
+            local active = (Window.ActiveTab == tab)
+            -- A tab with its own IconColor keeps it; everything else
+            -- follows the accent, which is platinum unless Colored UI is on.
+            local hue = tab.IconColor or accent
+
+            Tween(tab.Button, {
+                BackgroundTransparency = active and 0.55 or 1,
+            }, ease)
+            if tab._label then
+                Tween(tab._label, {
+                    TextColor3 = active and theme.Text or theme.TextDim,
+                }, ease)
+            end
+            if tab._icon then
+                -- Muted silver resting, full hue selected. Opacity carries
+                -- the state; the hue carries the theme.
+                TintIcon(tab._icon, active and hue or theme.TextSub)
+                Tween(tab._icon, {
+                    ImageTransparency = active and 0 or 0.42,
+                }, ease)
+            end
+            if tab._marker then
+                Tween(tab._marker, { BackgroundColor3 = hue }, ease)
+                Tween(tab._marker, {
+                    Size = UDim2.fromOffset(3, active and 20 or 0),
+                }, (animate == false) and EASE.Instant or EASE.Glide)
+            end
+        end
+    end
+    Window.PaintSidebar = function(_, a) PaintSidebar(a) end
+    RegisterAccent(function()
+        if not Window.Destroyed then PaintSidebar(false) end
+    end)
 
     function Window:CreateTab(tabOpts)
         tabOpts = tabOpts or {}
@@ -3381,9 +3526,16 @@ function Nely:CreateWindow(opts)
         local localeKey = tabOpts.LocaleKey
         local tabName   = tabOpts.Name or (localeKey and L(localeKey)) or ("Tab " .. order)
         local iconName  = tabOpts.Icon or "layers"
-        local iconColor = tabOpts.IconColor or AutoHue(order)
+        -- Three-way: an explicit IconColor always wins; ColorfulTabs opts
+        -- back into the rainbow; otherwise nil, meaning "follow the accent",
+        -- which is what makes the sidebar monochrome by default and lets it
+        -- track the Colored UI switch afterwards.
+        local tabHue = tabOpts.IconColor
+                    or (opts.ColorfulTabs and AutoHue(order))
+                    or nil
+        local iconColor = tabHue or Nely.AccentColor()
 
-        local Tab = { Name = tabName, Sections = {}, IconColor = iconColor }
+        local Tab = { Name = tabName, Sections = {}, IconColor = tabHue }
 
         -- sidebar button
         local btn = New("TextButton", {
@@ -3505,24 +3657,7 @@ function Nely:CreateWindow(opts)
             local previous = Window.ActiveTab
             Window.ActiveTab = Tab
 
-            for _, other in ipairs(Window.Tabs) do
-                local active = (other == Tab)
-                Tween(other.Button, {
-                    BackgroundTransparency = active and 0.55 or 1,
-                }, EASE.Snap)
-                Tween(other._label, {
-                    TextColor3 = active and theme.Text or theme.TextDim,
-                }, EASE.Snap)
-                -- Selection changes the glyph's opacity, not its hue, so
-                -- the sidebar keeps reading as a set of colours.
-                TintIcon(other._icon, other.IconColor or theme.Accent)
-                Tween(other._icon, {
-                    ImageTransparency = active and 0 or 0.42,
-                }, EASE.Snap)
-                Tween(other._marker, {
-                    Size = UDim2.fromOffset(3, active and 20 or 0),
-                }, EASE.Glide)
-            end
+            PaintSidebar(true)
 
             if previous then
                 Tween(previous.Page, { Position = UDim2.fromOffset(-18, 0) }, EASE.Snap)
@@ -3541,15 +3676,22 @@ function Nely:CreateWindow(opts)
         Tab._marker = marker
         Tab.Activate = Activate
 
+        -- Hover brightens the glyph toward silver as well as the row;
+        -- previously only the label moved, so pointing at a tab lit half
+        -- of it.
         btn.MouseEnter:Connect(function()
             if Window.ActiveTab == Tab then return end
             Tween(btn, { BackgroundTransparency = 0.8 }, EASE.Snap)
             Tween(label, { TextColor3 = theme.TextSub }, EASE.Snap)
+            TintIcon(icon, theme.Text)
+            Tween(icon, { ImageTransparency = 0.15 }, EASE.Snap)
         end)
         btn.MouseLeave:Connect(function()
             if Window.ActiveTab == Tab then return end
             Tween(btn, { BackgroundTransparency = 1 }, EASE.Snap)
             Tween(label, { TextColor3 = theme.TextDim }, EASE.Snap)
+            TintIcon(icon, theme.TextSub)
+            Tween(icon, { ImageTransparency = 0.42 }, EASE.Snap)
         end)
         btn.MouseButton1Click:Connect(function()
             -- Ripple sat at ZIndex 19, above the icon (18) and label (18), so
@@ -3560,6 +3702,7 @@ function Nely:CreateWindow(opts)
         end)
 
         table.insert(Window.Tabs, Tab)
+        PaintSidebar(false)
 
         -- Only while railed. With the sidebar expanded the name is already
         -- sitting right there, and a tooltip repeating it is just noise.
@@ -4198,28 +4341,28 @@ function Nely:CreateWindow(opts)
                 Size             = UDim2.fromOffset(38, 21),
                 Position         = UDim2.new(1, -14, 0.5, 0),
                 AnchorPoint      = Vector2.new(1, 0.5),
-                BackgroundColor3 = state and theme.Accent or theme.Elevated,
+                BackgroundColor3 = state and Nely.AccentColor() or theme.Elevated,
                 BorderSizePixel  = 0,
                 ZIndex           = 18,
                 Parent           = row,
             }, { Corner(11) })
 
+            -- Off: a muted knob on a dark track. On: it brightens. Both
+            -- ends stay legible whether the track is platinum or a saturated
+            -- theme accent.
             local knob = New("Frame", {
                 Size             = UDim2.fromOffset(15, 15),
                 Position         = UDim2.new(0, state and 20 or 3, 0.5, 0),
                 AnchorPoint      = Vector2.new(0, 0.5),
-                BackgroundColor3 = Color3.new(1, 1, 1),
+                BackgroundColor3 = state and Color3.new(1, 1, 1) or theme.TextSub,
                 BorderSizePixel  = 0,
                 ZIndex           = 19,
                 Parent           = track,
             }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
 
-            -- Check sits on the empty side of the track and fades with the
-            -- state, so "on" reads at a glance instead of only from the
-            -- knob's position.
-            local tick = Icons.Render("check", track, 11, Color3.new(1, 1, 1), 19)
-            tick.Position         = UDim2.fromOffset(5, 3)
-            tick.ImageTransparency = state and 0.15 or 1
+            -- No glyph inside the switch. The knob's position and the
+            -- track's colour carry the state; a checkmark on top of that is
+            -- a third signal saying the same thing, and it looked cheap.
 
             local hit = New("TextButton", {
                 Size                   = UDim2.fromScale(1, 1),
@@ -4232,11 +4375,31 @@ function Nely:CreateWindow(opts)
 
             local api = {}
 
+            -- Repaint from current settings. Separated from Apply so the
+            -- accent repainter can call it without touching state or firing
+            -- the callback.
+            local function Paint(animate)
+                local ease = (animate == false) and EASE.Instant or EASE.Snap
+                Tween(track, {
+                    BackgroundColor3 = state and Nely.AccentColor() or theme.Elevated,
+                }, ease)
+                Tween(knob, {
+                    BackgroundColor3 = state and Color3.new(1, 1, 1) or theme.TextSub,
+                }, ease)
+            end
+
+            -- Follows theme changes and the Colored UI switch in place.
+            local unregister = RegisterAccent(function()
+                if row.Parent then Paint(false) else error("gone", 0) end
+            end)
+
             local function Apply(value, fire)
                 state = value
-                Tween(track, { BackgroundColor3 = state and theme.Accent or theme.Elevated }, EASE.Snap)
+                Paint(true)
+                -- The knob springs; the colours do not. Overshooting a
+                -- position reads as weight, overshooting a colour reads as
+                -- a rendering fault.
                 Tween(knob, { Position = UDim2.new(0, state and 20 or 3, 0.5, 0) }, EASE.Pop)
-                Tween(tick, { ImageTransparency = state and 0.15 or 1 }, EASE.Snap)
                 if flag then
                     Nely.Flags[flag] = state
                     -- anything that declared Depends = "<flag>" greys itself
@@ -4257,7 +4420,7 @@ function Nely:CreateWindow(opts)
 
             api.CurrentValue = state
             api.Set     = function(_, value) Apply(value, true) end
-            api.Destroy = function() row:Destroy() end
+            api.Destroy = function() unregister() row:Destroy() end
             if flag then
                 Nely.Flags[flag] = state
                 task.defer(function() Window:_Sync(flag, state) end)
@@ -4720,26 +4883,35 @@ function Nely:CreateWindow(opts)
         --
         -- Clicking the chip cycles it, so a hub gets all three without
         -- shipping three separate controls.
-        local KEYBIND_MODES = { "Press", "Hold", "Toggle" }
+        ------------------------------------------------------------
+        -- Keybind
+        --
+        -- One job: hold a key, fire the callback once when it is pressed.
+        --
+        -- The Press / Hold / Toggle selector is gone. It put a three-way
+        -- decision in front of the user for something the hub author had
+        -- already decided, and the extra chip made one control read as two
+        -- ([ HOLD ][ E ]). A hub wanting toggle behaviour keeps its own
+        -- boolean in the callback -- it always did anyway.
+        --
+        -- Mode, LockMode and OnModeChanged are still accepted and ignored
+        -- so hubs written against the old signature keep loading; they
+        -- render nothing.
+        ------------------------------------------------------------
 
         function Tab:CreateKeybind(cfg, flag)
             cfg = cfg or {}
-            local current   = cfg.CurrentBind or "None"
-            local listening = false
-            local held      = false
-            local toggled   = false
-
-            local modeIndex = 1
-            for index, name in ipairs(KEYBIND_MODES) do
-                if cfg.Mode == name then modeIndex = index end
-            end
-            local locked = cfg.LockMode == true
+            local api
+            local current = cfg.CurrentBind or cfg.Default or "None"
 
             local row = Row(cfg.Description and ROW_HD or ROW_H)
-            RowText(row, cfg.Name or "Keybind", cfg.Description, RowIcon(row, cfg.Icon), cfg.Info, cfg.NameKey, cfg.DescKey)
+            RowText(row, cfg.Name or "Keybind", cfg.Description,
+                    RowIcon(row, cfg.Icon), cfg.Info, cfg.NameKey, cfg.DescKey)
 
+            -- Just the key. Nothing beside it.
             local pill = New("TextButton", {
-                Size             = UDim2.fromOffset(84, 27),
+                Name             = "KeyPill",
+                Size             = UDim2.fromOffset(72, 27),
                 Position         = UDim2.new(1, -14, 0.5, 0),
                 AnchorPoint      = Vector2.new(1, 0.5),
                 BackgroundColor3 = theme.Elevated,
@@ -4752,99 +4924,153 @@ function Nely:CreateWindow(opts)
                 Parent           = row,
             }, { Corner(8), Stroke(theme.Border, 1, 0.55) })
 
-            -- Sits flush against the key pill so the pair reads as one
-            -- control: [ HOLD ][ E ]
-            local chip = New("TextButton", {
-                Size             = UDim2.fromOffset(52, 27),
-                Position         = UDim2.new(1, -100, 0.5, 0),
-                AnchorPoint      = Vector2.new(1, 0.5),
-                BackgroundColor3 = theme.Elevated,
-                BackgroundTransparency = 0.45,
-                AutoButtonColor  = false,
-                Text             = string.upper(KEYBIND_MODES[modeIndex]),
-                TextColor3       = theme.TextDim,
-                TextSize         = 9,
-                Font             = Enum.Font.GothamBold,
-                ZIndex           = 19,
-                Parent           = row,
-            }, { Corner(8) })
+            ----------------------------------------------------------
+            -- Listening
+            --
+            -- Entering listening mode must never be a trap. Every exit
+            -- except a real keyboard key leaves the existing bind alone:
+            --
+            --   any mouse button   cancel, restore   (never binds a mouse)
+            --   click this pill    cancel, restore
+            --   Escape             cancel, restore   (never binds Escape)
+            --   a valid key        assign
+            --   Backspace/Delete   clear to None, deliberately
+            --
+            -- Event ORDER is what makes this work. InputBegan fires on
+            -- mouse DOWN and MouseButton1Click on mouse UP, so:
+            --   opening   down (not listening -> ignored), up -> start
+            --   cancelling down (listening -> cancel); the up that follows
+            --             lands on this same pill and must NOT re-open it,
+            --             hence the short per-pill suppression window.
+            ----------------------------------------------------------
 
-            AttachTooltip(chip, locked and "Trigger mode" or "Click to change trigger mode")
+            local listening = false
+            local restore   = current
+            local dotToken  = 0
 
-            local function SetMode(index)
-                modeIndex = ((index - 1) % #KEYBIND_MODES) + 1
-                chip.Text = string.upper(KEYBIND_MODES[modeIndex])
-                held, toggled = false, false
-                if cfg.OnModeChanged then
-                    task.spawn(cfg.OnModeChanged, KEYBIND_MODES[modeIndex])
-                end
+            local function Paint()
+                Tween(pill, {
+                    BackgroundColor3 = listening and Nely.AccentColor() or theme.Elevated,
+                    TextColor3       = listening and theme.Backdrop or theme.TextSub,
+                }, EASE.Snap)
             end
 
-            if not locked then
-                chip.MouseEnter:Connect(function()
-                    Tween(chip, { BackgroundTransparency = 0.15, TextColor3 = theme.Text }, EASE.Snap)
+            local function StopListening(keepOld)
+                if not listening then return end
+                listening = false
+                dotToken  = dotToken + 1          -- kills the ellipsis loop
+                KeybindCancelBy = pill
+                KeybindCancelAt = os.clock()
+                if ActiveKeybind == api then ActiveKeybind = nil end
+                if keepOld then current = restore end
+                pill.Text = current
+                Paint()
+            end
+
+            local function StartListening()
+                -- One listener at a time. Whatever was waiting gives up and
+                -- keeps its own bind, rather than two pills racing for the
+                -- next keypress.
+                if ActiveKeybind and ActiveKeybind ~= api then
+                    ActiveKeybind:Cancel()
+                end
+                listening     = true
+                restore       = current
+                ActiveKeybind = api
+                Paint()
+
+                dotToken = dotToken + 1
+                local mine = dotToken
+                task.spawn(function()
+                    local n = 0
+                    while listening and dotToken == mine do
+                        n = (n % 3) + 1
+                        pill.Text = string.rep("\u{00B7} ", n)
+                        task.wait(0.2)
+                    end
                 end)
-                chip.MouseLeave:Connect(function()
-                    Tween(chip, { BackgroundTransparency = 0.45, TextColor3 = theme.TextDim }, EASE.Snap)
-                end)
-                chip.MouseButton1Click:Connect(function() SetMode(modeIndex + 1) end)
             end
 
             pill.MouseButton1Click:Connect(function()
-                listening = true
-                pill.Text = "Press key"
-                Tween(pill, { BackgroundColor3 = theme.Accent, TextColor3 = Color3.new(1, 1, 1) }, EASE.Snap)
-            end)
-
-            local bindConn = UserInputService.InputBegan:Connect(function(input, processed)
-                if not listening or processed then return end
-                if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-                listening = false
-                current   = input.KeyCode.Name
-                pill.Text = current
-                Tween(pill, { BackgroundColor3 = theme.Elevated, TextColor3 = theme.TextSub }, EASE.Snap)
-                if flag then Nely.Flags[flag] = current end
-                if cfg.OnChanged then task.spawn(cfg.OnChanged, input.KeyCode) end
-            end)
-            table.insert(Nely.Connections, bindConn)
-
-            local fireConn = UserInputService.InputBegan:Connect(function(input, processed)
-                if listening or processed then return end
-                if input.KeyCode.Name ~= current then return end
-                local mode = KEYBIND_MODES[modeIndex]
-                if mode == "Hold" then
-                    if held then return end
-                    held = true
-                    if cfg.Callback then task.spawn(cfg.Callback, true) end
-                elseif mode == "Toggle" then
-                    toggled = not toggled
-                    if cfg.Callback then task.spawn(cfg.Callback, toggled) end
-                else
-                    if cfg.Callback then task.spawn(cfg.Callback) end
+                -- The mouse-down half of this very click already cancelled
+                -- THIS pill; do not turn the release into a re-open.
+                if KeybindCancelBy == pill and os.clock() - KeybindCancelAt < 0.2 then
+                    return
                 end
+                if listening then StopListening(true) return end
+                StartListening()
             end)
-            table.insert(Nely.Connections, fireConn)
 
-            local releaseConn = UserInputService.InputEnded:Connect(function(input, processed)
-                if input.KeyCode.Name ~= current then return end
-                if KEYBIND_MODES[modeIndex] ~= "Hold" or not held then return end
-                held = false
-                if cfg.Callback then task.spawn(cfg.Callback, false) end
+            pill.MouseEnter:Connect(function()
+                if listening then return end
+                Tween(pill, { TextColor3 = theme.Text }, EASE.Snap)
             end)
-            table.insert(Nely.Connections, releaseConn)
+            pill.MouseLeave:Connect(function()
+                if listening then return end
+                Tween(pill, { TextColor3 = theme.TextSub }, EASE.Snap)
+            end)
 
-            local api = {
-                CurrentBind = current,
-                Mode        = KEYBIND_MODES[modeIndex],
-                Set = function(_, key) current = key; pill.Text = key end,
-                SetMode = function(_, name)
-                    for index, candidate in ipairs(KEYBIND_MODES) do
-                        if candidate == name then SetMode(index) end
+            local inputConn = UserInputService.InputBegan:Connect(function(input, processed)
+                if listening then
+                    local it = input.UserInputType
+                    -- ANY pointer press cancels, wherever it lands. Mouse
+                    -- buttons are never accepted as binds.
+                    if it == Enum.UserInputType.MouseButton1
+                    or it == Enum.UserInputType.MouseButton2
+                    or it == Enum.UserInputType.MouseButton3
+                    or it == Enum.UserInputType.Touch then
+                        StopListening(true)
+                        return
                     end
-                    api.Mode = KEYBIND_MODES[modeIndex]
+                    if it ~= Enum.UserInputType.Keyboard then return end
+
+                    local key = input.KeyCode
+                    if key == Enum.KeyCode.Escape then
+                        StopListening(true)
+                        return
+                    end
+                    if key == Enum.KeyCode.Backspace or key == Enum.KeyCode.Delete then
+                        current, restore = "None", "None"
+                        StopListening(false)
+                        api.CurrentBind = current
+                        if flag then Nely.Flags[flag] = current end
+                        if cfg.OnChanged then task.spawn(cfg.OnChanged, nil) end
+                        return
+                    end
+                    if not AcceptableKey(key) then return end
+
+                    current, restore = key.Name, key.Name
+                    StopListening(false)
+                    api.CurrentBind = current
+                    if flag then Nely.Flags[flag] = current end
+                    if cfg.OnChanged then task.spawn(cfg.OnChanged, key) end
+                    return
+                end
+
+                -- Not listening: this is the bind firing. Once per press.
+                if processed then return end
+                if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+                if current == "None" or input.KeyCode.Name ~= current then return end
+                if cfg.Callback then task.spawn(cfg.Callback) end
+            end)
+            table.insert(Nely.Connections, inputConn)
+
+            api = {
+                CurrentBind = current,
+                Set = function(_, key)
+                    current = tostring(key or "None")
+                    restore = current
+                    api.CurrentBind = current
+                    if not listening then pill.Text = current end
+                    if flag then Nely.Flags[flag] = current end
                 end,
-                Destroy = function() row:Destroy() end,
+                Cancel  = function() StopListening(true) end,
+                -- Accepted and ignored, for hubs written against the old API.
+                SetMode = function() end,
+                Mode    = "Press",
+                Destroy = function() StopListening(true) row:Destroy() end,
             }
+
             Lockable(row, api)
             BindDepend(api, cfg.Depends)
             Window:RegisterElement(flag, api)
@@ -7514,14 +7740,14 @@ function Nely:CreateWindow(opts)
             end,
         })
 
+        -- Was "Background blur". There is no blur any more, so this slot
+        -- carries the switch people will actually reach for.
         tab:CreateToggle({
-            NameKey      = "settings.blur",
-            DescKey      = "settings.desc.blur",
-            Icon         = "droplet",
-            CurrentValue = true,
-            Callback     = function(state)
-                Tween(Blur, { Size = state and 14 or 0 }, EASE.Smooth)
-            end,
+            NameKey      = "settings.colored",
+            DescKey      = "settings.desc.colored",
+            Icon         = "palette",
+            CurrentValue = Nely.ColoredUI == true,
+            Callback     = function(state) Nely:SetColoredUI(state) end,
         })
 
         tab:CreateSection(nil, "settings.interface")
@@ -7763,7 +7989,6 @@ function Nely:CreateWindow(opts)
         ------------------------------------------------------------
 
         Tween(splashScale, { Scale = 1 }, EASE.Spring)
-        Tween(Blur, { Size = 16 }, EASE.Glide)
 
         local duration = opts.LoadingTime or 1.6
         local started  = os.clock()
@@ -8068,7 +8293,6 @@ function Nely:KeySystem(opts)
     card.Size = UDim2.fromOffset(300, 0)
     Tween(overlay, { BackgroundTransparency = 0.4 }, EASE.Smooth)
     Tween(card, { Size = UDim2.fromOffset(320, 0) }, EASE.Pop)
-    Tween(Blur, { Size = 12 }, EASE.Glide)
 
     repeat task.wait(0.1) until resolved
     return granted
@@ -8082,6 +8306,10 @@ function Nely:SetTheme(name)
     local newTheme, canonical = ResolveTheme(name)
     if not newTheme then return false end
     Nely.ThemeName = canonical or Nely.ThemeName
+    -- Accent-bearing controls repaint from the new theme once the swap
+    -- below has finished; see the deferred call at the end of this
+    -- function. Registered controls are the reason an existing toggle
+    -- follows a theme change instead of keeping the old colour.
     local oldTheme = Nely.Theme
     if newTheme == oldTheme then return true end
 
@@ -8143,6 +8371,11 @@ function Nely:SetTheme(name)
     end
 
     Nely.Theme = newTheme
+
+    -- Registered controls repaint from the new palette. This is what makes
+    -- an already-created toggle or sidebar icon follow a theme change
+    -- rather than keeping whatever it was built with.
+    RepaintAccents()
     return true
 end
 
