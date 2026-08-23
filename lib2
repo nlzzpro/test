@@ -1,29 +1,37 @@
 --[[
-    NELY X  --  UI library
+    NELY HUB UI
+    ================================================================
 
-    A ground-up redesign rather than a restyle of Nely Lib v3. The API is
-    kept source-compatible with v3 so an existing hub only has to change
-    the loadstring, but nothing under the surface is shared.
+    A ground-up interface library for Nely Hub. Not a restyle of Nely Lib
+    v3 and not an evolution of Nely X -- a different layout model.
 
-    What is actually different:
+    WHAT MAKES IT DIFFERENT
 
-      * REAL background blur. Roblox has no backdrop-blur for GUI, so the
-        blur is applied to the 3D scene through Lighting while the window
-        is open and removed when it closes. That is why the game goes soft
-        behind the panel instead of the panel just being see-through.
+    * CARD LAYOUT, NOT A LIST. Controls live inside titled group cards
+      that flow across two columns, so a dense tab reads as a handful of
+      small panels instead of forty stacked rows. A section in the calling
+      code becomes a card; nothing has to be rewritten to get it.
 
-      * Depth from four cheap layers -- translucent base, diagonal accent
-        wash, vertical darkening, and a one-pixel lit top edge -- rather
-        than one flat fill.
+    * ICON RAIL. The sidebar is glyphs only, with the tab name arriving as
+      a tooltip on hover. It gives the content roughly 150px back on a
+      phone, which is most of a second column.
 
-      * Every tab owns a colour. Selection changes opacity, not hue, so an
-        inactive sidebar still reads as a set of colours.
+    * REAL BACKGROUND BLUR. Roblox has no backdrop-blur for GUI, so the
+      blur is applied to the 3D scene through Lighting while the window is
+      open and animated away on close. It is owned by the window and dies
+      with it, so it can never be left behind over someone's game.
 
-      * CreateItemGrid: a card grid of real item artwork with optional
-        badges. Built for picking a weapon skin by its picture instead of
-        guessing from a name in a dropdown.
+    * THEMES ARE LIVE. Every themed instance registers what it uses, so
+      SetTheme repaints the running interface instead of asking for a
+      reload.
 
-    Plain ASCII only -- executors that read the file as latin-1 turn smart
+    * ITEM GRIDS. Cards of real artwork with badges, for picking a thing
+      by its picture rather than by remembering its name.
+
+    API is source-compatible with Nely Lib v3 -- an existing hub only
+    changes its loadstring.
+
+    Plain ASCII only. Executors that read the file as latin-1 turn smart
     punctuation into mojibake inside visible labels.
 ]]
 
@@ -35,40 +43,112 @@ local HttpService      = game:GetService("HttpService")
 local Players          = game:GetService("Players")
 local LocalPlayer      = Players.LocalPlayer
 
-local NelyX = { Flags = {}, Windows = {} }
+local Nely = { Flags = {}, Windows = {}, _themed = {} }
 
 --==================================================================
---  THEME
+--  1. THEMES
+--
+--  Presets are full palettes rather than an accent swap, because a
+--  single hue change over a fixed grey never reads as a different theme.
 --==================================================================
-local Theme = {
-    Backdrop   = Color3.fromRGB(14, 14, 19),
-    Base       = Color3.fromRGB(20, 20, 27),
-    Surface    = Color3.fromRGB(28, 28, 37),
-    SurfaceAlt = Color3.fromRGB(34, 34, 45),
-    Elevated   = Color3.fromRGB(41, 41, 54),
-    Border     = Color3.fromRGB(60, 60, 78),
-    BorderSoft = Color3.fromRGB(44, 44, 58),
-    Text       = Color3.fromRGB(238, 238, 246),
-    TextSub    = Color3.fromRGB(186, 186, 202),
-    TextDim    = Color3.fromRGB(128, 128, 146),
-    Accent     = Color3.fromRGB(150, 120, 245),
-    AccentDim  = Color3.fromRGB(104, 82, 180),
-    Success    = Color3.fromRGB(120, 230, 150),
-    Danger     = Color3.fromRGB(240, 100, 105),
-    Warning    = Color3.fromRGB(245, 200, 110),
+local PRESETS = {
+    ["Nely Violet"] = {
+        Backdrop = Color3.fromRGB(13, 12, 18), Base = Color3.fromRGB(19, 18, 26),
+        Surface = Color3.fromRGB(26, 25, 35), SurfaceAlt = Color3.fromRGB(33, 31, 44),
+        Elevated = Color3.fromRGB(41, 39, 55), Border = Color3.fromRGB(58, 55, 78),
+        BorderSoft = Color3.fromRGB(41, 39, 55),
+        Text = Color3.fromRGB(240, 238, 248), TextSub = Color3.fromRGB(186, 182, 202),
+        TextDim = Color3.fromRGB(126, 122, 144),
+        Accent = Color3.fromRGB(154, 122, 250), AccentDim = Color3.fromRGB(104, 82, 184),
+        Success = Color3.fromRGB(118, 226, 152), Danger = Color3.fromRGB(240, 100, 108),
+        Warning = Color3.fromRGB(246, 198, 108),
+    },
+    ["Midnight Indigo"] = {
+        Backdrop = Color3.fromRGB(11, 13, 22), Base = Color3.fromRGB(16, 19, 31),
+        Surface = Color3.fromRGB(23, 27, 42), SurfaceAlt = Color3.fromRGB(29, 34, 52),
+        Elevated = Color3.fromRGB(37, 43, 64), Border = Color3.fromRGB(52, 60, 88),
+        BorderSoft = Color3.fromRGB(37, 43, 64),
+        Text = Color3.fromRGB(236, 240, 252), TextSub = Color3.fromRGB(174, 184, 208),
+        TextDim = Color3.fromRGB(116, 126, 152),
+        Accent = Color3.fromRGB(96, 128, 255), AccentDim = Color3.fromRGB(64, 88, 190),
+        Success = Color3.fromRGB(104, 222, 168), Danger = Color3.fromRGB(246, 104, 112),
+        Warning = Color3.fromRGB(248, 196, 96),
+    },
+    ["Snow"] = {
+        Backdrop = Color3.fromRGB(15, 18, 24), Base = Color3.fromRGB(21, 25, 33),
+        Surface = Color3.fromRGB(29, 34, 44), SurfaceAlt = Color3.fromRGB(36, 42, 55),
+        Elevated = Color3.fromRGB(45, 52, 68), Border = Color3.fromRGB(62, 72, 92),
+        BorderSoft = Color3.fromRGB(45, 52, 68),
+        Text = Color3.fromRGB(238, 245, 252), TextSub = Color3.fromRGB(180, 194, 210),
+        TextDim = Color3.fromRGB(122, 136, 154),
+        Accent = Color3.fromRGB(104, 198, 248), AccentDim = Color3.fromRGB(64, 138, 184),
+        Success = Color3.fromRGB(112, 226, 176), Danger = Color3.fromRGB(244, 108, 116),
+        Warning = Color3.fromRGB(248, 202, 112),
+    },
+    ["Ember"] = {
+        Backdrop = Color3.fromRGB(19, 14, 13), Base = Color3.fromRGB(26, 19, 18),
+        Surface = Color3.fromRGB(35, 26, 25), SurfaceAlt = Color3.fromRGB(44, 33, 31),
+        Elevated = Color3.fromRGB(55, 41, 38), Border = Color3.fromRGB(78, 58, 54),
+        BorderSoft = Color3.fromRGB(55, 41, 38),
+        Text = Color3.fromRGB(250, 240, 236), TextSub = Color3.fromRGB(206, 186, 178),
+        TextDim = Color3.fromRGB(146, 126, 118),
+        Accent = Color3.fromRGB(250, 138, 78), AccentDim = Color3.fromRGB(186, 96, 50),
+        Success = Color3.fromRGB(140, 220, 140), Danger = Color3.fromRGB(246, 96, 96),
+        Warning = Color3.fromRGB(250, 200, 100),
+    },
+    ["Mint"] = {
+        Backdrop = Color3.fromRGB(11, 19, 18), Base = Color3.fromRGB(16, 27, 25),
+        Surface = Color3.fromRGB(22, 37, 34), SurfaceAlt = Color3.fromRGB(28, 46, 42),
+        Elevated = Color3.fromRGB(36, 58, 53), Border = Color3.fromRGB(52, 82, 75),
+        BorderSoft = Color3.fromRGB(36, 58, 53),
+        Text = Color3.fromRGB(234, 250, 244), TextSub = Color3.fromRGB(172, 206, 196),
+        TextDim = Color3.fromRGB(114, 148, 138),
+        Accent = Color3.fromRGB(86, 226, 176), AccentDim = Color3.fromRGB(52, 156, 120),
+        Success = Color3.fromRGB(110, 232, 164), Danger = Color3.fromRGB(244, 106, 110),
+        Warning = Color3.fromRGB(246, 202, 108),
+    },
 }
-NelyX.Theme = Theme
 
+local Theme = {}
+for k, v in pairs(PRESETS["Nely Violet"]) do Theme[k] = v end
+Nely.Theme = Theme
+Nely.ThemeName = "Nely Violet"
+
+-- Instances register the theme key they follow, so a theme change can
+-- repaint what is already on screen instead of demanding a reload.
+local function Themed(inst, prop, key)
+    table.insert(Nely._themed, { inst = inst, prop = prop, key = key })
+    return inst
+end
+
+function Nely:GetThemes()
+    local out = {}
+    for name in pairs(PRESETS) do out[#out + 1] = name end
+    table.sort(out)
+    return out
+end
+
+function Nely:AddTheme(cfg)
+    if type(cfg) ~= "table" or not cfg.Name then return end
+    local base = PRESETS[cfg.Base or "Nely Violet"] or PRESETS["Nely Violet"]
+    local t = {}
+    for k, v in pairs(base) do t[k] = v end
+    for k, v in pairs(cfg) do
+        if typeof(v) == "Color3" then t[k] = v end
+    end
+    PRESETS[cfg.Name] = t
+end
+
+--==================================================================
+--  2. EASING + BUILD HELPERS
+--==================================================================
 local EASE = {
-    Snap  = TweenInfo.new(0.14, Enum.EasingStyle.Quad,  Enum.EasingDirection.Out),
-    Glide = TweenInfo.new(0.26, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
-    Pop   = TweenInfo.new(0.34, Enum.EasingStyle.Back,  Enum.EasingDirection.Out),
+    Snap  = TweenInfo.new(0.13, Enum.EasingStyle.Quad,  Enum.EasingDirection.Out),
+    Glide = TweenInfo.new(0.24, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+    Pop   = TweenInfo.new(0.32, Enum.EasingStyle.Back,  Enum.EasingDirection.Out),
     Slow  = TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
 }
 
---==================================================================
---  BUILD HELPERS
---==================================================================
 local function New(class, props, children)
     local inst = Instance.new(class)
     for k, v in pairs(props or {}) do
@@ -80,38 +160,32 @@ local function New(class, props, children)
 end
 
 local function Corner(r) return New("UICorner", { CornerRadius = UDim.new(0, r) }) end
+local function Round() return New("UICorner", { CornerRadius = UDim.new(1, 0) }) end
 
-local function Stroke(color, thickness, transparency)
-    return New("UIStroke", {
-        Color = color or Theme.Border,
+local function Stroke(colorKey, thickness, transparency)
+    local s = New("UIStroke", {
+        Color = Theme[colorKey] or Theme.Border,
         Thickness = thickness or 1,
         Transparency = transparency or 0,
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
     })
+    if Theme[colorKey] then Themed(s, "Color", colorKey) end
+    return s
 end
 
 local function Pad(t, b, l, r)
     return New("UIPadding", {
-        PaddingTop    = UDim.new(0, t or 0),
-        PaddingBottom = UDim.new(0, b or t or 0),
-        PaddingLeft   = UDim.new(0, l or 0),
-        PaddingRight  = UDim.new(0, r or l or 0),
+        PaddingTop = UDim.new(0, t or 0), PaddingBottom = UDim.new(0, b or t or 0),
+        PaddingLeft = UDim.new(0, l or 0), PaddingRight = UDim.new(0, r or l or 0),
     })
 end
 
-local function List(padding, dir)
+local function List(padding, dir, align)
     return New("UIListLayout", {
-        Padding       = UDim.new(0, padding or 8),
+        Padding = UDim.new(0, padding or 8),
         FillDirection = dir or Enum.FillDirection.Vertical,
-        SortOrder     = Enum.SortOrder.LayoutOrder,
-    })
-end
-
-local function Gradient(seq, rotation, transparency)
-    return New("UIGradient", {
-        Color = seq,
-        Rotation = rotation or 0,
-        Transparency = transparency or NumberSequence.new(0),
+        HorizontalAlignment = align or Enum.HorizontalAlignment.Left,
+        SortOrder = Enum.SortOrder.LayoutOrder,
     })
 end
 
@@ -121,59 +195,41 @@ local function Tween(inst, props, info)
     return t
 end
 
--- Soft drop shadow. A single scaled image behind the frame reads better
--- than stacked translucent frames and costs one draw call.
-local function Shadow(parent, spread, transparency, corner)
+local function Shadow(parent, spread, transparency)
     return New("ImageLabel", {
-        Name = "Shadow",
-        AnchorPoint = Vector2.new(0.5, 0.5),
+        Name = "Shadow", AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.fromScale(0.5, 0.5),
         Size = UDim2.new(1, spread or 30, 1, spread or 30),
-        BackgroundTransparency = 1,
-        Image = "rbxassetid://6014261993",
+        BackgroundTransparency = 1, Image = "rbxassetid://6014261993",
         ImageColor3 = Color3.fromRGB(0, 0, 0),
         ImageTransparency = transparency or 0.55,
-        ScaleType = Enum.ScaleType.Slice,
-        SliceCenter = Rect.new(49, 49, 450, 450),
-        ZIndex = (parent.ZIndex or 1) - 1,
-        Parent = parent,
+        ScaleType = Enum.ScaleType.Slice, SliceCenter = Rect.new(49, 49, 450, 450),
+        ZIndex = (parent.ZIndex or 1) - 1, Parent = parent,
     })
 end
 
--- Click ripple. Clipped to the row so it never bleeds past the corners.
 local function Ripple(host, x, y)
     if not host:IsA("GuiObject") then return end
     local abs = host.AbsolutePosition
     local px = (x or (abs.X + host.AbsoluteSize.X / 2)) - abs.X
     local py = (y or (abs.Y + host.AbsoluteSize.Y / 2)) - abs.Y
-    local circle = New("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.fromOffset(px, py),
-        Size = UDim2.fromOffset(0, 0),
-        BackgroundColor3 = Theme.Accent,
-        BackgroundTransparency = 0.75,
-        BorderSizePixel = 0,
-        ZIndex = (host.ZIndex or 1) + 3,
-        Parent = host,
-    }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
-    local reach = math.max(host.AbsoluteSize.X, host.AbsoluteSize.Y) * 2
-    Tween(circle, { Size = UDim2.fromOffset(reach, reach), BackgroundTransparency = 1 }, EASE.Slow)
-    task.delay(0.5, function() pcall(function() circle:Destroy() end) end)
+    local c = New("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(px, py),
+        Size = UDim2.fromOffset(0, 0), BackgroundColor3 = Theme.Accent,
+        BackgroundTransparency = 0.78, BorderSizePixel = 0,
+        ZIndex = (host.ZIndex or 1) + 4, Parent = host,
+    }, { Round() })
+    local reach = math.max(host.AbsoluteSize.X, host.AbsoluteSize.Y) * 2.1
+    Tween(c, { Size = UDim2.fromOffset(reach, reach), BackgroundTransparency = 1 }, EASE.Slow)
+    task.delay(0.5, function() pcall(function() c:Destroy() end) end)
 end
 
--- Hue wheel walked by the golden ratio: any number of tabs land on
--- distinct, evenly spread colours without a hand-picked palette.
-local function AutoHue(index)
-    return Color3.fromHSV(((index - 1) * 0.618033988749895) % 1, 0.55, 1)
+local function AutoHue(i)
+    return Color3.fromHSV(((i - 1) * 0.618033988749895) % 1, 0.52, 1)
 end
 
 --==================================================================
---  ICONS
---
---  The same Lucide pack Nely Lib v3 uses, so every existing
---  Icon = "crosshair" keeps working. A raw asset id is passed through
---  untouched and never tinted -- a glyph is a silhouette meant to take a
---  colour, a photograph is not.
+--  3. ICONS
 --==================================================================
 local LUCIDE_URL = "https://raw.githubusercontent.com/nlzzpro/nelylib/refs/heads/main/icons"
 local Icons = { Set = nil }
@@ -190,10 +246,9 @@ local ALIASES = {
     xCircle = "circle-x", arrowRight = "arrow-right",
 }
 
-local function IsRaw(name)
-    return type(name) == "string"
-       and (name:sub(1, 13) == "rbxassetid://" or name:sub(1, 10) == "rbxthumb://"
-         or name:sub(1, 11) == "rbxasset://" or name:sub(1, 4) == "http")
+local function IsRaw(n)
+    return type(n) == "string" and (n:sub(1, 13) == "rbxassetid://"
+        or n:sub(1, 10) == "rbxthumb://" or n:sub(1, 11) == "rbxasset://" or n:sub(1, 4) == "http")
 end
 
 local function IconAsset(name)
@@ -202,19 +257,21 @@ local function IconAsset(name)
     return Icons.Set[ALIASES[name] or name]
 end
 
-local function RenderIcon(name, parent, size, color, zindex)
+local function RenderIcon(name, parent, size, colorKey, zindex)
     local raw = IsRaw(name)
+    local col = (type(colorKey) == "string" and Theme[colorKey]) or colorKey or Theme.TextSub
     local img = New("ImageLabel", {
-        Name = "Icon",
-        Size = UDim2.fromOffset(size, size),
-        BackgroundTransparency = 1,
-        Image = IconAsset(name) or "",
-        ImageColor3 = raw and Color3.fromRGB(255, 255, 255) or (color or Theme.TextSub),
+        Name = "Icon", Size = UDim2.fromOffset(size, size),
+        BackgroundTransparency = 1, Image = IconAsset(name) or "",
+        ImageColor3 = raw and Color3.fromRGB(255, 255, 255) or col,
         ScaleType = Enum.ScaleType.Fit,
-        ZIndex = zindex or ((parent.ZIndex or 1) + 1),
-        Parent = parent,
+        ZIndex = zindex or ((parent.ZIndex or 1) + 1), Parent = parent,
     })
-    if raw then img:SetAttribute("RawArt", true) end
+    if raw then
+        img:SetAttribute("RawArt", true)
+    elseif type(colorKey) == "string" and Theme[colorKey] then
+        Themed(img, "ImageColor3", colorKey)
+    end
     return img
 end
 
@@ -225,32 +282,76 @@ local function TintIcon(icon, color)
 end
 
 --==================================================================
---  ROOT
+--  4. ROOT
 --==================================================================
 local Root = New("ScreenGui", {
-    Name = "NelyX",
-    ResetOnSpawn = false,
-    IgnoreGuiInset = true,
-    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-    DisplayOrder = 999999,
+    Name = "NelyHubUI", ResetOnSpawn = false, IgnoreGuiInset = true,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 999999,
 })
 do
-    local ok = pcall(function() Root.Parent = (gethui and gethui()) or game:GetService("CoreGui") end)
+    local ok = pcall(function()
+        Root.Parent = (gethui and gethui()) or game:GetService("CoreGui")
+    end)
     if not ok or not Root.Parent then Root.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 end
-NelyX.Root = Root
+Nely.Root = Root
+
+-- Shared tooltip. One instance that follows the pointer beats a label per
+-- control, which would be hundreds of idle instances.
+local Tip = New("Frame", {
+    Name = "Tooltip", Visible = false, AutomaticSize = Enum.AutomaticSize.XY,
+    BackgroundColor3 = Theme.Elevated, BackgroundTransparency = 0.05,
+    BorderSizePixel = 0, ZIndex = 900, Parent = Root,
+}, { Corner(7), Stroke("Border", 1, 0.4), Pad(5, 5, 9, 9) })
+Themed(Tip, "BackgroundColor3", "Elevated")
+local TipText = Themed(New("TextLabel", {
+    AutomaticSize = Enum.AutomaticSize.XY, BackgroundTransparency = 1,
+    Text = "", TextColor3 = Theme.Text, TextSize = 11.5, Font = Enum.Font.GothamMedium,
+    ZIndex = 901, Parent = Tip,
+}), "TextColor3", "Text")
+
+local function AttachTip(guiObject, text)
+    if not text or text == "" then return end
+    guiObject.MouseEnter:Connect(function()
+        TipText.Text = text
+        Tip.Visible = true
+    end)
+    guiObject.MouseLeave:Connect(function() Tip.Visible = false end)
+end
+RunService.RenderStepped:Connect(function()
+    if not Tip.Visible then return end
+    local m = UserInputService:GetMouseLocation()
+    Tip.Position = UDim2.fromOffset(m.X + 14, m.Y + 4)
+end)
 
 --==================================================================
---  NOTIFICATIONS
+--  5. THEME APPLICATION
 --==================================================================
-local NotifyHost = New("Frame", {
-    Name = "Toasts",
-    AnchorPoint = Vector2.new(1, 1),
-    Position = UDim2.new(1, -18, 1, -18),
-    Size = UDim2.fromOffset(300, 400),
-    BackgroundTransparency = 1,
-    ZIndex = 500,
-    Parent = Root,
+function Nely:SetTheme(name)
+    local preset = PRESETS[name]
+    if not preset then return false end
+    for k, v in pairs(preset) do Theme[k] = v end
+    Nely.ThemeName = name
+    local alive = {}
+    for _, rec in ipairs(Nely._themed) do
+        if rec.inst and rec.inst.Parent then
+            pcall(function() Tween(rec.inst, { [rec.prop] = Theme[rec.key] }, EASE.Glide) end)
+            alive[#alive + 1] = rec
+        end
+    end
+    Nely._themed = alive
+    return true
+end
+
+function Nely:SetCursorEnabled() end
+
+--==================================================================
+--  6. NOTIFICATIONS
+--==================================================================
+local Toasts = New("Frame", {
+    Name = "Toasts", AnchorPoint = Vector2.new(1, 1),
+    Position = UDim2.new(1, -20, 1, -20), Size = UDim2.fromOffset(320, 460),
+    BackgroundTransparency = 1, ZIndex = 800, Parent = Root,
 }, {
     New("UIListLayout", {
         Padding = UDim.new(0, 8),
@@ -260,173 +361,119 @@ local NotifyHost = New("Frame", {
     }),
 })
 
-function NelyX:Notify(cfg)
+function Nely:Notify(cfg)
     cfg = cfg or {}
     local colour = cfg.Color or Theme.Accent
     local card = New("Frame", {
-        Size = UDim2.new(1, 0, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundColor3 = Theme.Surface,
-        BackgroundTransparency = 0.08,
-        BorderSizePixel = 0,
-        ZIndex = 501,
-        Parent = NotifyHost,
-    }, {
-        Corner(12), Stroke(colour, 1, 0.55), Pad(11, 11, 12, 12),
-        List(3),
-    })
-    Shadow(card, 22, 0.7, 12)
+        Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundColor3 = Theme.Surface, BackgroundTransparency = 0.06,
+        BorderSizePixel = 0, ZIndex = 801, Parent = Toasts,
+    }, { Corner(13), Pad(12, 12, 14, 14), List(3) })
+    New("UIStroke", { Color = colour, Thickness = 1, Transparency = 0.5, Parent = card })
+    Shadow(card, 24, 0.68)
 
-    -- accent rail so the toast reads at a glance
     New("Frame", {
-        Size = UDim2.new(0, 3, 1, -14),
-        Position = UDim2.fromOffset(0, 7),
-        BackgroundColor3 = colour,
-        BorderSizePixel = 0,
-        ZIndex = 503,
-        Parent = card,
+        Size = UDim2.new(0, 3, 1, -16), Position = UDim2.fromOffset(-8, 8),
+        BackgroundColor3 = colour, BorderSizePixel = 0, ZIndex = 803, Parent = card,
     }, { Corner(2) })
 
     local head = New("Frame", {
-        Size = UDim2.new(1, 0, 0, 18),
-        BackgroundTransparency = 1,
-        LayoutOrder = 1,
-        ZIndex = 502,
-        Parent = card,
+        Size = UDim2.new(1, 0, 0, 17), BackgroundTransparency = 1,
+        LayoutOrder = 1, ZIndex = 802, Parent = card,
     })
-    local ic = RenderIcon(cfg.Icon or "bolt", head, 14, colour, 503)
-    ic.Position = UDim2.fromOffset(0, 2)
+    local ic = RenderIcon(cfg.Icon or "bolt", head, 14, colour, 803)
+    ic.Position = UDim2.fromOffset(0, 1)
     New("TextLabel", {
-        Position = UDim2.fromOffset(20, 0),
-        Size = UDim2.new(1, -20, 1, 0),
-        BackgroundTransparency = 1,
-        Text = tostring(cfg.Title or "Notice"),
-        TextColor3 = Theme.Text,
-        TextSize = 13,
-        Font = Enum.Font.GothamBold,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 503,
-        Parent = head,
+        Position = UDim2.fromOffset(21, 0), Size = UDim2.new(1, -21, 1, 0),
+        BackgroundTransparency = 1, Text = tostring(cfg.Title or "Notice"),
+        TextColor3 = Theme.Text, TextSize = 13, Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 803, Parent = head,
     })
     if cfg.Content and cfg.Content ~= "" then
         New("TextLabel", {
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundTransparency = 1,
-            Text = tostring(cfg.Content),
-            TextColor3 = Theme.TextSub,
-            TextSize = 12,
-            Font = Enum.Font.Gotham,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextWrapped = true,
-            LayoutOrder = 2,
-            ZIndex = 502,
-            Parent = card,
+            Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1, Text = tostring(cfg.Content),
+            TextColor3 = Theme.TextSub, TextSize = 11.5, Font = Enum.Font.Gotham,
+            TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true,
+            LayoutOrder = 2, ZIndex = 802, Parent = card,
         })
     end
 
-    card.BackgroundTransparency = 1
-    card.Position = UDim2.fromOffset(40, 0)
-    Tween(card, { BackgroundTransparency = 0.08, Position = UDim2.fromOffset(0, 0) }, EASE.Pop)
+    -- progress bar draining toward dismissal, so a toast never just
+    -- vanishes without warning
+    local bar = New("Frame", {
+        Size = UDim2.new(1, 0, 0, 2), BackgroundColor3 = colour,
+        BackgroundTransparency = 0.35, BorderSizePixel = 0,
+        LayoutOrder = 3, ZIndex = 803, Parent = card,
+    }, { Corner(1) })
 
-    task.delay(cfg.Duration or 4, function()
-        Tween(card, { BackgroundTransparency = 1, Position = UDim2.fromOffset(40, 0) }, EASE.Glide)
+    card.BackgroundTransparency = 1
+    card.Position = UDim2.fromOffset(50, 0)
+    Tween(card, { BackgroundTransparency = 0.06, Position = UDim2.fromOffset(0, 0) }, EASE.Pop)
+
+    local life = cfg.Duration or 4
+    Tween(bar, { Size = UDim2.new(0, 0, 0, 2) }, TweenInfo.new(life, Enum.EasingStyle.Linear))
+    task.delay(life, function()
+        Tween(card, { BackgroundTransparency = 1, Position = UDim2.fromOffset(50, 0) }, EASE.Glide)
         task.delay(0.3, function() pcall(function() card:Destroy() end) end)
     end)
 end
 
--- v3 compatibility: themes are fixed in X, so these are accepted and
--- ignored rather than erroring out an existing hub.
-function NelyX:AddTheme() end
-function NelyX:SetTheme() end
-function NelyX:GetThemes() return { "NelyX" } end
-function NelyX:SetCursorEnabled() end
-
 --==================================================================
---  WINDOW
+--  7. WINDOW
 --==================================================================
-function NelyX:CreateWindow(opts)
+function Nely:CreateWindow(opts)
     opts = opts or {}
-    local Window = { Tabs = {}, Sections = {}, Elements = {}, _order = 0, Open = true }
+    local W = { Tabs = {}, Elements = {}, _order = 0, Open = true }
 
-    local viewport = workspace.CurrentCamera
-        and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
-    local compact  = viewport.X < 900
-    local size     = opts.Size or UDim2.fromOffset(compact and 620 or 760, compact and 420 or 540)
-    local railW    = opts.SidebarWidth or (compact and 156 or 196)
+    local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
+                     or Vector2.new(1280, 720)
+    local compact  = viewport.X < 940
+    local size     = opts.Size or UDim2.fromOffset(compact and 660 or 900,
+                                                   compact and 440 or 600)
+    local RAIL     = 62
+    local TOP      = 56
 
     ------------------------------------------------------------------
-    -- background blur
-    --
-    -- The only honest way to get frosted glass in Roblox: blur the scene
-    -- behind the panel. It is created once, animated on open/close, and
-    -- destroyed with the window so it can never be left behind.
+    -- blur + scrim
     ------------------------------------------------------------------
-    local blur = New("BlurEffect", { Name = "NelyXBlur", Size = 0, Parent = Lighting })
+    local blur = New("BlurEffect", { Name = "NelyHubBlur", Size = 0, Parent = Lighting })
     local scrim = New("Frame", {
-        Name = "Scrim",
-        Size = UDim2.fromScale(1, 1),
-        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        ZIndex = 5,
-        Parent = Root,
+        Name = "Scrim", Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.fromRGB(0, 0, 0), BackgroundTransparency = 1,
+        BorderSizePixel = 0, ZIndex = 5, Parent = Root,
     })
 
     ------------------------------------------------------------------
     -- shell
     ------------------------------------------------------------------
-    local shell = New("Frame", {
-        Name = "Window",
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size = size,
-        BackgroundColor3 = Theme.Backdrop,
-        BackgroundTransparency = 0.06,
-        BorderSizePixel = 0,
-        ZIndex = 10,
-        Parent = Root,
-    }, { Corner(18), Stroke(Theme.Border, 1, 0.25) })
-    Shadow(shell, 46, 0.72, 18)
-    Window.Frame = shell
+    local shell = Themed(New("Frame", {
+        Name = "Window", AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5), Size = size,
+        BackgroundColor3 = Theme.Backdrop, BackgroundTransparency = 0.05,
+        BorderSizePixel = 0, ZIndex = 10, Parent = Root,
+    }, { Corner(20), Stroke("Border", 1, 0.25) }), "BackgroundColor3", "Backdrop")
+    Shadow(shell, 52, 0.74)
+    W.Frame = shell
 
-    -- layer: diagonal accent wash, brightest top-left
     New("Frame", {
-        Name = "Wash", Size = UDim2.fromScale(1, 1),
-        BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0.93,
-        BorderSizePixel = 0, ZIndex = 10, Parent = shell,
+        Name = "Wash", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Theme.Accent,
+        BackgroundTransparency = 0.94, BorderSizePixel = 0, ZIndex = 10, Parent = shell,
     }, {
-        Corner(18),
-        Gradient(ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Theme.Accent),
-            ColorSequenceKeypoint.new(0.5, Theme.Backdrop),
-            ColorSequenceKeypoint.new(1, Theme.Backdrop),
-        }), 135),
-    })
-
-    -- layer: vertical depth so low content still separates from the edge
-    New("Frame", {
-        Name = "Depth", Size = UDim2.fromScale(1, 1),
-        BackgroundColor3 = Color3.fromRGB(0, 0, 0), BackgroundTransparency = 0.9,
-        BorderSizePixel = 0, ZIndex = 10, Parent = shell,
-    }, {
-        Corner(18),
+        Corner(20),
         New("UIGradient", {
-            Rotation = 90,
-            Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 1),
-                NumberSequenceKeypoint.new(0.65, 0.94),
-                NumberSequenceKeypoint.new(1, 0.75),
+            Rotation = 130,
+            Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Theme.Accent),
+                ColorSequenceKeypoint.new(0.55, Theme.Backdrop),
+                ColorSequenceKeypoint.new(1, Theme.Backdrop),
             }),
         }),
     })
-
-    -- layer: lit top edge
     New("Frame", {
-        Name = "Sheen",
-        Size = UDim2.new(1, -40, 0, 1), Position = UDim2.new(0, 20, 0, 1),
-        BackgroundColor3 = Color3.fromRGB(255, 255, 255), BackgroundTransparency = 0.72,
-        BorderSizePixel = 0, ZIndex = 30, Parent = shell,
+        Name = "Sheen", Size = UDim2.new(1, -44, 0, 1), Position = UDim2.new(0, 22, 0, 1),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255), BackgroundTransparency = 0.74,
+        BorderSizePixel = 0, ZIndex = 40, Parent = shell,
     }, {
         New("UIGradient", {
             Transparency = NumberSequence.new({
@@ -440,69 +487,73 @@ function NelyX:CreateWindow(opts)
     ------------------------------------------------------------------
     -- topbar
     ------------------------------------------------------------------
-    local topH = 52
     local topbar = New("Frame", {
-        Name = "Topbar", Size = UDim2.new(1, 0, 0, topH),
-        BackgroundTransparency = 1, ZIndex = 20, Parent = shell,
+        Name = "Topbar", Size = UDim2.new(1, 0, 0, TOP),
+        BackgroundTransparency = 1, ZIndex = 25, Parent = shell,
     })
 
+    local brandX = 20
     if opts.Logo then
-        local logo = New("ImageLabel", {
-            Size = UDim2.fromOffset(26, 26),
-            Position = UDim2.fromOffset(18, 13),
-            BackgroundTransparency = 1,
-            Image = opts.Logo,
-            ZIndex = 21, Parent = topbar,
-        }, { Corner(7) })
-        logo.Name = "Logo"
-    end
-    local titleX = opts.Logo and 54 or 20
-
-    New("TextLabel", {
-        Position = UDim2.fromOffset(titleX, 9),
-        Size = UDim2.fromOffset(240, 18),
-        BackgroundTransparency = 1,
-        Text = tostring(opts.Title or "Nely X"),
-        TextColor3 = Theme.Text, TextSize = 15, Font = Enum.Font.GothamBold,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 21, Parent = topbar,
-    })
-    if opts.Subtitle then
-        -- subtitle sits in a tinted chip rather than as loose grey text
-        local chip = New("Frame", {
-            Position = UDim2.fromOffset(titleX, 28),
-            Size = UDim2.fromOffset(0, 16),
-            AutomaticSize = Enum.AutomaticSize.X,
-            BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0.82,
-            BorderSizePixel = 0, ZIndex = 21, Parent = topbar,
-        }, { Corner(5), Stroke(Theme.Accent, 1, 0.6), Pad(0, 0, 7, 7) })
-        New("TextLabel", {
-            Size = UDim2.fromOffset(0, 16), AutomaticSize = Enum.AutomaticSize.X,
-            BackgroundTransparency = 1,
-            Text = tostring(opts.Subtitle),
-            TextColor3 = Theme.Accent, TextSize = 10, Font = Enum.Font.GothamBold,
-            ZIndex = 22, Parent = chip,
+        New("ImageLabel", {
+            Name = "Logo", Size = UDim2.fromOffset(30, 30),
+            Position = UDim2.fromOffset(18, 13), BackgroundTransparency = 1,
+            Image = opts.Logo, ScaleType = Enum.ScaleType.Fit,
+            ZIndex = 26, Parent = topbar,
         })
+        brandX = 58
     end
 
-    local function TopButton(icon, offset, colour, fn)
-        local b = New("TextButton", {
-            AnchorPoint = Vector2.new(1, 0.5),
-            Position = UDim2.new(1, -offset, 0.5, 0),
-            Size = UDim2.fromOffset(28, 28),
-            BackgroundColor3 = Theme.Elevated, BackgroundTransparency = 0.45,
-            AutoButtonColor = false, Text = "",
-            ZIndex = 21, Parent = topbar,
-        }, { Corner(9) })
-        local ic = RenderIcon(icon, b, 14, Theme.TextSub, 22)
+    Themed(New("TextLabel", {
+        Position = UDim2.fromOffset(brandX, 11), Size = UDim2.fromOffset(200, 17),
+        BackgroundTransparency = 1, Text = tostring(opts.Title or "Nely Hub"),
+        TextColor3 = Theme.Text, TextSize = 15, Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 26, Parent = topbar,
+    }), "TextColor3", "Text")
+
+    if opts.Subtitle then
+        Themed(New("TextLabel", {
+            Position = UDim2.fromOffset(brandX, 30), Size = UDim2.fromOffset(220, 14),
+            BackgroundTransparency = 1, Text = tostring(opts.Subtitle),
+            TextColor3 = Theme.TextDim, TextSize = 11, Font = Enum.Font.Gotham,
+            TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 26, Parent = topbar,
+        }), "TextColor3", "TextDim")
+    end
+
+    -- centred search, the way the reference lays it out
+    local searchWrap = Themed(New("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0),
+        Size = UDim2.fromOffset(compact and 220 or 330, 34),
+        BackgroundColor3 = Theme.Surface, BackgroundTransparency = 0.25,
+        BorderSizePixel = 0, ZIndex = 26, Parent = topbar,
+    }, { Corner(10), Stroke("BorderSoft", 1, 0.45) }), "BackgroundColor3", "Surface")
+    local si = RenderIcon("search", searchWrap, 14, "TextDim", 27)
+    si.Position = UDim2.fromOffset(11, 10)
+    local searchBox = Themed(New("TextBox", {
+        Position = UDim2.fromOffset(33, 0), Size = UDim2.new(1, -42, 1, 0),
+        BackgroundTransparency = 1, Text = "", PlaceholderText = "Search functions",
+        PlaceholderColor3 = Theme.TextDim, TextColor3 = Theme.Text,
+        TextSize = 12.5, Font = Enum.Font.Gotham,
+        TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
+        ZIndex = 27, Parent = searchWrap,
+    }), "TextColor3", "Text")
+
+    local function TopButton(icon, offset, colour, tip, fn)
+        local b = Themed(New("TextButton", {
+            AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -offset, 0.5, 0),
+            Size = UDim2.fromOffset(30, 30), BackgroundColor3 = Theme.Surface,
+            BackgroundTransparency = 0.3, AutoButtonColor = false, Text = "",
+            ZIndex = 26, Parent = topbar,
+        }, { Corner(9) }), "BackgroundColor3", "Surface")
+        local ic = RenderIcon(icon, b, 14, "TextSub", 27)
         ic.AnchorPoint = Vector2.new(0.5, 0.5)
         ic.Position = UDim2.fromScale(0.5, 0.5)
+        AttachTip(b, tip)
         b.MouseEnter:Connect(function()
-            Tween(b, { BackgroundTransparency = 0.15 }, EASE.Snap)
+            Tween(b, { BackgroundTransparency = 0.05 }, EASE.Snap)
             TintIcon(ic, colour)
         end)
         b.MouseLeave:Connect(function()
-            Tween(b, { BackgroundTransparency = 0.45 }, EASE.Snap)
+            Tween(b, { BackgroundTransparency = 0.3 }, EASE.Snap)
             TintIcon(ic, Theme.TextSub)
         end)
         b.MouseButton1Click:Connect(fn)
@@ -510,87 +561,85 @@ function NelyX:CreateWindow(opts)
     end
 
     ------------------------------------------------------------------
-    -- sidebar + content
+    -- icon rail
     ------------------------------------------------------------------
-    local rail = New("Frame", {
-        Name = "Sidebar",
-        Position = UDim2.fromOffset(0, topH),
-        Size = UDim2.new(0, railW, 1, -topH),
-        BackgroundColor3 = Theme.Base, BackgroundTransparency = 0.55,
-        BorderSizePixel = 0, ZIndex = 15, Parent = shell,
-    })
-    New("Frame", {
-        Size = UDim2.new(0, 1, 1, -20), Position = UDim2.new(1, 0, 0, 10),
-        BackgroundColor3 = Theme.BorderSoft, BackgroundTransparency = 0.4,
-        BorderSizePixel = 0, ZIndex = 16, Parent = rail,
-    })
+    local rail = Themed(New("Frame", {
+        Name = "Rail", Position = UDim2.fromOffset(10, TOP - 4),
+        Size = UDim2.new(0, RAIL - 10, 1, -TOP - 6),
+        BackgroundColor3 = Theme.Base, BackgroundTransparency = 0.35,
+        BorderSizePixel = 0, ZIndex = 20, Parent = shell,
+    }, { Corner(16), Stroke("BorderSoft", 1, 0.5) }), "BackgroundColor3", "Base")
 
-    local searchWrap, searchBox
-    if opts.SearchBar ~= false then
-        searchWrap = New("Frame", {
-            Position = UDim2.fromOffset(12, 10),
-            Size = UDim2.new(1, -24, 0, 30),
-            BackgroundColor3 = Theme.Surface, BackgroundTransparency = 0.3,
-            BorderSizePixel = 0, ZIndex = 17, Parent = rail,
-        }, { Corner(9), Stroke(Theme.BorderSoft, 1, 0.5) })
-        local si = RenderIcon("search", searchWrap, 13, Theme.TextDim, 18)
-        si.Position = UDim2.fromOffset(9, 8)
-        searchBox = New("TextBox", {
-            Position = UDim2.fromOffset(29, 0), Size = UDim2.new(1, -36, 1, 0),
-            BackgroundTransparency = 1,
-            Text = "", PlaceholderText = "Search",
-            PlaceholderColor3 = Theme.TextDim,
-            TextColor3 = Theme.Text, TextSize = 12, Font = Enum.Font.Gotham,
-            TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
-            ZIndex = 18, Parent = searchWrap,
-        })
+    local railList = New("ScrollingFrame", {
+        Size = UDim2.new(1, 0, 1, -62), Position = UDim2.fromOffset(0, 8),
+        BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0,
+        CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollingDirection = Enum.ScrollingDirection.Y, ZIndex = 21, Parent = rail,
+    }, { List(6, nil, Enum.HorizontalAlignment.Center), Pad(2, 8, 0, 0) })
+
+    -- avatar pinned at the bottom of the rail, as in the reference
+    do
+        local av = New("Frame", {
+            AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -10),
+            Size = UDim2.fromOffset(38, 38), BackgroundColor3 = Theme.Elevated,
+            BackgroundTransparency = 0.2, BorderSizePixel = 0,
+            ZIndex = 22, Parent = rail,
+        }, { Round(), Stroke("Accent", 1, 0.5) })
+        Themed(av, "BackgroundColor3", "Elevated")
+        New("ImageLabel", {
+            Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+            Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(LocalPlayer.UserId)
+                    .. "&w=60&h=60",
+            ZIndex = 23, Parent = av,
+        }, { Round() })
+        AttachTip(av, LocalPlayer.DisplayName .. "  (@" .. LocalPlayer.Name .. ")")
     end
 
-    local tabList = New("ScrollingFrame", {
-        Name = "Tabs",
-        Position = UDim2.fromOffset(0, searchWrap and 48 or 8),
-        Size = UDim2.new(1, 0, 1, searchWrap and -56 or -16),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
-        ScrollBarThickness = 2, ScrollBarImageColor3 = Theme.Border,
-        CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ScrollingDirection = Enum.ScrollingDirection.Y,
-        ZIndex = 16, Parent = rail,
-    }, { List(4), Pad(4, 8, 10, 10) })
-
+    ------------------------------------------------------------------
+    -- content: page title + two columns
+    ------------------------------------------------------------------
     local content = New("Frame", {
-        Name = "Content",
-        Position = UDim2.fromOffset(railW, topH),
-        Size = UDim2.new(1, -railW, 1, -topH),
+        Name = "Content", Position = UDim2.fromOffset(RAIL + 6, TOP),
+        Size = UDim2.new(1, -RAIL - 22, 1, -TOP - 12),
         BackgroundTransparency = 1, ClipsDescendants = true,
         ZIndex = 14, Parent = shell,
     })
 
     ------------------------------------------------------------------
-    -- open / close, drag, blur animation
+    -- open / close / drag
     ------------------------------------------------------------------
     local function setOpen(state, instant)
-        Window.Open = state
+        W.Open = state
         local info = instant and TweenInfo.new(0) or EASE.Glide
         if state then
             shell.Visible = true
-            shell.Size = UDim2.fromOffset(size.X.Offset * 0.92, size.Y.Offset * 0.92)
+            shell.Size = UDim2.fromOffset(size.X.Offset * 0.93, size.Y.Offset * 0.93)
             shell.BackgroundTransparency = 1
-            Tween(shell, { Size = size, BackgroundTransparency = 0.06 }, EASE.Pop)
-            Tween(blur, { Size = 14 }, info)
-            Tween(scrim, { BackgroundTransparency = 0.55 }, info)
+            Tween(shell, { Size = size, BackgroundTransparency = 0.05 }, EASE.Pop)
+            Tween(blur, { Size = opts.Blur or 16 }, info)
+            Tween(scrim, { BackgroundTransparency = 0.5 }, info)
         else
-            Tween(shell, { Size = UDim2.fromOffset(size.X.Offset * 0.94, size.Y.Offset * 0.94),
+            Tween(shell, { Size = UDim2.fromOffset(size.X.Offset * 0.95, size.Y.Offset * 0.95),
                            BackgroundTransparency = 1 }, EASE.Glide)
             Tween(blur, { Size = 0 }, info)
             Tween(scrim, { BackgroundTransparency = 1 }, info)
-            task.delay(0.28, function() if not Window.Open then shell.Visible = false end end)
+            task.delay(0.28, function() if not W.Open then shell.Visible = false end end)
         end
     end
-    Window.SetOpen = function(_, s) setOpen(s) end
-    Window.Toggle  = function() setOpen(not Window.Open) end
+    W.Toggle = function() setOpen(not W.Open) end
+    W.SetOpen = function(_, s) setOpen(s) end
 
-    TopButton("minus", 52, Theme.Warning, function() setOpen(false) end)
-    TopButton("x", 18, Theme.Danger, function()
+    TopButton("layout-grid", 96, Theme.Accent, "Theme", function()
+        local names = Nely:GetThemes()
+        local i = 1
+        for n, name in ipairs(names) do if name == Nely.ThemeName then i = n end end
+        local nextName = names[(i % #names) + 1]
+        Nely:SetTheme(nextName)
+        Nely:Notify({ Title = "Theme", Content = nextName, Icon = "palette",
+                      Color = Theme.Accent, Duration = 2 })
+    end)
+    TopButton("minus", 58, Theme.Warning, "Minimise", function() setOpen(false) end)
+    TopButton("x", 20, Theme.Danger, "Close", function()
         setOpen(false)
         task.delay(0.4, function()
             pcall(function() blur:Destroy() end)
@@ -599,7 +648,7 @@ function NelyX:CreateWindow(opts)
         end)
     end)
 
-    do -- drag by the topbar
+    do
         local dragging, startPos, startInput
         topbar.InputBegan:Connect(function(i)
             if i.UserInputType == Enum.UserInputType.MouseButton1
@@ -624,30 +673,29 @@ function NelyX:CreateWindow(opts)
 
     if opts.ToggleKey then
         UserInputService.InputBegan:Connect(function(i, typing)
-            if typing then return end
-            if i.KeyCode == opts.ToggleKey then Window.Toggle() end
+            if not typing and i.KeyCode == opts.ToggleKey then W.Toggle() end
         end)
     end
 
     setOpen(true, true)
-    Tween(blur, { Size = 14 }, EASE.Slow)
-    Tween(scrim, { BackgroundTransparency = 0.55 }, EASE.Slow)
+    Tween(blur, { Size = opts.Blur or 16 }, EASE.Slow)
+    Tween(scrim, { BackgroundTransparency = 0.5 }, EASE.Slow)
 
     ------------------------------------------------------------------
-    -- element registry / config
+    -- config
     ------------------------------------------------------------------
-    function Window:RegisterElement(flag, api)
-        if flag then Window.Elements[flag] = api end
+    function W:RegisterElement(flag, api)
+        if flag then W.Elements[flag] = api end
         return api
     end
 
-    local folder = opts.Folder or "NelyX"
-    function Window:SaveConfig(name)
+    local folder = opts.Folder or "NelyHubUI"
+    function W:SaveConfig(name)
         if not (writefile and isfolder and makefolder) then return false, "no filesystem" end
-        local ok, err = pcall(function()
+        return pcall(function()
             if not isfolder(folder) then makefolder(folder) end
             local plain = {}
-            for flag, value in pairs(NelyX.Flags) do
+            for flag, value in pairs(Nely.Flags) do
                 local t = typeof(value)
                 if t == "Color3" then
                     plain[flag] = { __type = "Color3", r = value.R, g = value.G, b = value.B }
@@ -657,20 +705,18 @@ function NelyX:CreateWindow(opts)
                     plain[flag] = value
                 end
             end
-            writefile(folder .. "/" .. name .. ".json",
-                HttpService:JSONEncode({ payload = plain }))
+            writefile(folder .. "/" .. name .. ".json", HttpService:JSONEncode({ payload = plain }))
         end)
-        return ok, err
     end
 
-    function Window:LoadConfig(name)
+    function W:LoadConfig(name)
         if not (readfile and isfile) then return false, "no filesystem" end
         local path = folder .. "/" .. tostring(name) .. ".json"
         if not isfile(path) then return false, "no such config" end
-        local ok, err = pcall(function()
+        return pcall(function()
             local data = HttpService:JSONDecode(readfile(path)).payload or {}
             for flag, value in pairs(data) do
-                local api = Window.Elements[flag]
+                local api = W.Elements[flag]
                 if api and api.Set then
                     if type(value) == "table" and value.__type == "Color3" then
                         api:Set(Color3.new(value.r, value.g, value.b))
@@ -682,10 +728,9 @@ function NelyX:CreateWindow(opts)
                 end
             end
         end)
-        return ok, err
     end
 
-    function Window:ListConfigs()
+    function W:ListConfigs()
         if not listfiles then return {} end
         local out = {}
         pcall(function()
@@ -699,29 +744,22 @@ function NelyX:CreateWindow(opts)
     end
 
     ------------------------------------------------------------------
-    -- tab sections
+    -- tab sections (kept for API compatibility; the rail is flat)
     ------------------------------------------------------------------
-    function Window:CreateTabSection(cfg)
+    function W:CreateTabSection(cfg)
         cfg = type(cfg) == "string" and { Title = cfg } or (cfg or {})
-        Window._order = Window._order + 1
-        local Section = { Tabs = {} }
-
-        New("TextLabel", {
-            Size = UDim2.new(1, 0, 0, 22),
-            BackgroundTransparency = 1,
-            Text = string.upper(tostring(cfg.Title or "Section")),
-            TextColor3 = Theme.TextDim, TextSize = 9, Font = Enum.Font.GothamBold,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            LayoutOrder = Window._order,
-            ZIndex = 17, Parent = tabList,
+        local Section = { Tabs = {}, Title = cfg.Title }
+        -- a hairline separator between groups of rail buttons
+        New("Frame", {
+            Size = UDim2.new(0, 22, 0, 1), BackgroundColor3 = Theme.BorderSoft,
+            BackgroundTransparency = 0.4, BorderSizePixel = 0,
+            LayoutOrder = W._order, ZIndex = 22, Parent = railList,
         })
-
         function Section:CreateTab(tabCfg)
-            local tab = Window:CreateTab(tabCfg)
-            table.insert(Section.Tabs, tab)
-            return tab
+            local t = W:CreateTab(tabCfg)
+            table.insert(Section.Tabs, t)
+            return t
         end
-        table.insert(Window.Sections, Section)
         return Section
     end
 
@@ -730,811 +768,873 @@ function NelyX:CreateWindow(opts)
     ------------------------------------------------------------------
     local activeTab
 
-    function Window:CreateTab(cfg)
+    function W:CreateTab(cfg)
         cfg = cfg or {}
-        Window._order = Window._order + 1
-        local order  = Window._order
-        local name   = cfg.Name or ("Tab " .. order)
-        local hue    = cfg.IconColor or AutoHue(order)
+        W._order = W._order + 1
+        local order = W._order
+        local name  = cfg.Name or ("Tab " .. order)
+        local hue   = cfg.IconColor or AutoHue(order)
+        local Tab   = { Name = name, Hue = hue, Groups = {} }
 
-        local Tab = { Name = name, Hue = hue }
-
+        ----------------------------------------------------------------
+        -- rail button
+        ----------------------------------------------------------------
         local btn = New("TextButton", {
-            Name = name,
-            Size = UDim2.new(1, 0, 0, 36),
-            BackgroundColor3 = Theme.Elevated, BackgroundTransparency = 1,
-            AutoButtonColor = false, Text = "",
-            LayoutOrder = order, ClipsDescendants = true,
-            ZIndex = 17, Parent = tabList,
-        }, { Corner(10) })
-
-        -- circular tinted plate behind the glyph, the way the reference
-        -- hubs do it: colour lives in the plate, not the label
-        local plate = New("Frame", {
-            Size = UDim2.fromOffset(26, 26),
-            Position = UDim2.new(0, 7, 0.5, 0),
-            AnchorPoint = Vector2.new(0, 0.5),
-            BackgroundColor3 = hue, BackgroundTransparency = 0.75,
-            BorderSizePixel = 0, ZIndex = 18, Parent = btn,
-        }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
-
-        local icon = RenderIcon(cfg.Icon or "layers", plate, 14, hue, 19)
+            Name = name, Size = UDim2.fromOffset(40, 40),
+            BackgroundColor3 = hue, BackgroundTransparency = 0.86,
+            AutoButtonColor = false, Text = "", LayoutOrder = order,
+            ZIndex = 22, Parent = railList,
+        }, { Corner(12) })
+        local icon = RenderIcon(cfg.Icon or "layers", btn, 17, hue, 23)
         icon.AnchorPoint = Vector2.new(0.5, 0.5)
         icon.Position = UDim2.fromScale(0.5, 0.5)
+        icon.ImageTransparency = 0.3
+        AttachTip(btn, name)
 
-        local label = New("TextLabel", {
-            Position = UDim2.fromOffset(43, 0),
-            Size = UDim2.new(1, -52, 1, 0),
-            BackgroundTransparency = 1,
-            Text = name,
-            TextColor3 = Theme.TextDim, TextSize = 12.5, Font = Enum.Font.GothamMedium,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextTruncate = Enum.TextTruncate.AtEnd,
-            ZIndex = 18, Parent = btn,
-        })
+        -- active marker on the rail edge
+        local mark = New("Frame", {
+            AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, -10, 0.5, 0),
+            Size = UDim2.fromOffset(3, 0), BackgroundColor3 = hue,
+            BorderSizePixel = 0, ZIndex = 24, Parent = btn,
+        }, { Corner(2) })
 
+        ----------------------------------------------------------------
+        -- page: title + two columns
+        ----------------------------------------------------------------
         local page = New("ScrollingFrame", {
-            Name = name .. "Page",
-            Size = UDim2.fromScale(1, 1),
+            Name = name .. "Page", Size = UDim2.fromScale(1, 1),
             BackgroundTransparency = 1, BorderSizePixel = 0,
             ScrollBarThickness = 3, ScrollBarImageColor3 = Theme.Border,
-            ScrollBarImageTransparency = 0.3,
-            CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            ScrollBarImageTransparency = 0.35, CanvasSize = UDim2.new(),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
             ScrollingDirection = Enum.ScrollingDirection.Y,
             Visible = false, ZIndex = 15, Parent = content,
-        }, { List(9), Pad(14, 18, 16, 16) })
+        }, { List(12), Pad(4, 20, 4, 10) })
+
+        Themed(New("TextLabel", {
+            Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1,
+            Text = name, TextColor3 = Theme.Text, TextSize = 16,
+            Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
+            LayoutOrder = 0, ZIndex = 16, Parent = page,
+        }), "TextColor3", "Text")
+
+        local columns = New("Frame", {
+            Name = "Columns", Size = UDim2.new(1, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
+            LayoutOrder = 1, ZIndex = 16, Parent = page,
+        }, { List(12, Enum.FillDirection.Horizontal) })
+
+        local colCount = (compact or cfg.SingleColumn) and 1 or 2
+        local cols = {}
+        for i = 1, colCount do
+            cols[i] = New("Frame", {
+                Name = "Col" .. i,
+                Size = UDim2.new(1 / colCount, colCount > 1 and -6 or 0, 0, 0),
+                AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
+                LayoutOrder = i, ZIndex = 16, Parent = columns,
+            }, { List(12) })
+        end
+        local colFill = {}
+        for i = 1, colCount do colFill[i] = 0 end
 
         Tab.Button, Tab.Page = btn, page
 
         local function activate()
             if activeTab == Tab then return end
-            for _, other in ipairs(Window.Tabs) do
-                local on = other == Tab
-                Tween(other.Button, { BackgroundTransparency = on and 0.55 or 1 }, EASE.Snap)
-                Tween(other._label, { TextColor3 = on and Theme.Text or Theme.TextDim }, EASE.Snap)
-                Tween(other._plate, { BackgroundTransparency = on and 0.45 or 0.8 }, EASE.Snap)
-                Tween(other._icon, { ImageTransparency = on and 0 or 0.35 }, EASE.Snap)
-                if other.Page ~= page then
-                    other.Page.Visible = false
-                end
+            for _, o in ipairs(W.Tabs) do
+                local on = o == Tab
+                Tween(o.Button, { BackgroundTransparency = on and 0.72 or 0.86 }, EASE.Snap)
+                Tween(o._icon, { ImageTransparency = on and 0 or 0.3 }, EASE.Snap)
+                Tween(o._mark, { Size = UDim2.fromOffset(3, on and 20 or 0) }, EASE.Glide)
+                if o.Page ~= page then o.Page.Visible = false end
             end
-            -- crossfade the incoming page
             page.Visible = true
-            page.Position = UDim2.fromOffset(0, 10)
+            page.Position = UDim2.fromOffset(0, 12)
             Tween(page, { Position = UDim2.fromOffset(0, 0) }, EASE.Glide)
             activeTab = Tab
         end
-
-        Tab._label, Tab._plate, Tab._icon = label, plate, icon
-        Tab.Activate = activate
+        Tab._icon, Tab._mark, Tab.Activate = icon, mark, activate
 
         btn.MouseEnter:Connect(function()
-            if activeTab ~= Tab then Tween(btn, { BackgroundTransparency = 0.8 }, EASE.Snap) end
+            if activeTab ~= Tab then Tween(btn, { BackgroundTransparency = 0.78 }, EASE.Snap) end
         end)
         btn.MouseLeave:Connect(function()
-            if activeTab ~= Tab then Tween(btn, { BackgroundTransparency = 1 }, EASE.Snap) end
+            if activeTab ~= Tab then Tween(btn, { BackgroundTransparency = 0.86 }, EASE.Snap) end
         end)
-        btn.MouseButton1Click:Connect(function()
-            Ripple(btn)
-            activate()
-        end)
+        btn.MouseButton1Click:Connect(function() Ripple(btn) activate() end)
 
-        table.insert(Window.Tabs, Tab)
-        icon.ImageTransparency = 0.35
-        if #Window.Tabs == 1 then activate() end
+        table.insert(W.Tabs, Tab)
+        if #W.Tabs == 1 then activate() end
 
         ----------------------------------------------------------------
-        -- row scaffolding shared by every control
+        -- GROUP CARD
         ----------------------------------------------------------------
-        local ROW, ROW_D = 40, 54
+        local currentGroup
 
-        local function Row(height)
-            return New("Frame", {
-                Size = UDim2.new(1, 0, 0, height),
-                BackgroundColor3 = Theme.Surface, BackgroundTransparency = 0.3,
-                BorderSizePixel = 0, ZIndex = 16, Parent = page,
-            }, { Corner(11), Stroke(Theme.BorderSoft, 1, 0.55) })
-        end
+        function Tab:CreateGroup(gcfg)
+            gcfg = type(gcfg) == "string" and { Title = gcfg } or (gcfg or {})
 
-        local function RowText(row, title, desc, iconName)
-            local x = 14
-            if iconName then
-                local ic = RenderIcon(iconName, row, 15, Theme.TextSub, 18)
-                ic.Position = UDim2.new(0, 13, 0.5, 0)
-                ic.AnchorPoint = Vector2.new(0, 0.5)
-                x = 38
+            -- drop the card into the column holding the fewest so far;
+            -- with two columns that alternates, and it still balances if
+            -- a tab is mostly one big card
+            local target, best = 1, math.huge
+            for i = 1, colCount do
+                if colFill[i] < best then best, target = colFill[i], i end
             end
-            New("TextLabel", {
-                Position = UDim2.fromOffset(x, desc and 8 or 0),
-                Size = UDim2.new(1, -x - 60, 0, desc and 16 or 40),
-                BackgroundTransparency = 1,
-                Text = tostring(title),
-                TextColor3 = Theme.Text, TextSize = 13, Font = Enum.Font.GothamMedium,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                TextYAlignment = desc and Enum.TextYAlignment.Center or Enum.TextYAlignment.Center,
-                ZIndex = 18, Parent = row,
-            })
-            if desc then
-                New("TextLabel", {
-                    Position = UDim2.fromOffset(x, 26),
-                    Size = UDim2.new(1, -x - 60, 0, 20),
-                    BackgroundTransparency = 1,
-                    Text = tostring(desc),
-                    TextColor3 = Theme.TextDim, TextSize = 11, Font = Enum.Font.Gotham,
+            colFill[target] = colFill[target] + 1
+
+            local G = { Tab = Tab }
+
+            local holder = New("Frame", {
+                Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+                BackgroundTransparency = 1, LayoutOrder = colFill[target],
+                ZIndex = 16, Parent = cols[target],
+            }, { List(6) })
+
+            if gcfg.Title then
+                Themed(New("TextLabel", {
+                    Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1,
+                    Text = tostring(gcfg.Title), TextColor3 = Theme.TextSub,
+                    TextSize = 12.5, Font = Enum.Font.GothamMedium,
                     TextXAlignment = Enum.TextXAlignment.Left,
-                    TextYAlignment = Enum.TextYAlignment.Top,
-                    TextWrapped = true,
-                    ZIndex = 18, Parent = row,
+                    LayoutOrder = 1, ZIndex = 17, Parent = holder,
+                }), "TextColor3", "TextSub")
+            end
+
+            local card = Themed(New("Frame", {
+                Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+                BackgroundColor3 = Theme.Surface, BackgroundTransparency = 0.28,
+                BorderSizePixel = 0, LayoutOrder = 2, ZIndex = 17, Parent = holder,
+            }, { Corner(14), Stroke("BorderSoft", 1, 0.5), Pad(6, 6, 6, 6), List(2) }),
+                "BackgroundColor3", "Surface")
+
+            G.Card = card
+            table.insert(Tab.Groups, G)
+            currentGroup = G
+
+            ------------------------------------------------------------
+            -- row scaffolding
+            ------------------------------------------------------------
+            local function Row(height, opt)
+                local r = New("Frame", {
+                    Size = UDim2.new(1, 0, 0, height),
+                    BackgroundColor3 = Theme.SurfaceAlt, BackgroundTransparency = 1,
+                    BorderSizePixel = 0, ZIndex = 18, Parent = card,
+                }, { Corner(10) })
+                Themed(r, "BackgroundColor3", "SurfaceAlt")
+                if opt and opt.Disabled then r:SetAttribute("Disabled", true) end
+                return r
+            end
+
+            -- label + optional info dot + optional description
+            local function RowText(row, title, desc, info, dim)
+                local x = 12
+                local titleLabel = New("TextLabel", {
+                    Position = UDim2.fromOffset(x, desc and 7 or 0),
+                    Size = UDim2.new(1, -x - 92, 0, desc and 16 or row.Size.Y.Offset),
+                    BackgroundTransparency = 1, Text = tostring(title),
+                    TextColor3 = dim and Theme.TextDim or Theme.Text,
+                    TextSize = 12.5, Font = Enum.Font.GothamMedium,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    TextTruncate = Enum.TextTruncate.AtEnd,
+                    ZIndex = 19, Parent = row,
+                })
+                Themed(titleLabel, "TextColor3", dim and "TextDim" or "Text")
+
+                if info and info ~= "" then
+                    -- an info dot keeps long explanations out of the row
+                    -- while leaving them one hover away
+                    local dot = New("TextButton", {
+                        Size = UDim2.fromOffset(13, 13),
+                        Position = UDim2.fromOffset(x + math.min(#tostring(title) * 6.6, 210) + 5,
+                                                     desc and 9 or (row.Size.Y.Offset / 2 - 6)),
+                        BackgroundTransparency = 1, AutoButtonColor = false, Text = "",
+                        ZIndex = 20, Parent = row,
+                    })
+                    local g = RenderIcon("info", dot, 12, "TextDim", 21)
+                    AttachTip(dot, info)
+                    dot.MouseEnter:Connect(function() TintIcon(g, Theme.Accent) end)
+                    dot.MouseLeave:Connect(function() TintIcon(g, Theme.TextDim) end)
+                end
+
+                if desc then
+                    Themed(New("TextLabel", {
+                        Position = UDim2.fromOffset(x, 24),
+                        Size = UDim2.new(1, -x - 92, 0, 18),
+                        BackgroundTransparency = 1, Text = tostring(desc),
+                        TextColor3 = Theme.TextDim, TextSize = 11, Font = Enum.Font.Gotham,
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true,
+                        ZIndex = 19, Parent = row,
+                    }), "TextColor3", "TextDim")
+                end
+                return titleLabel
+            end
+
+            local function Hoverable(row, hit)
+                hit.MouseEnter:Connect(function()
+                    Tween(row, { BackgroundTransparency = 0.45 }, EASE.Snap)
+                end)
+                hit.MouseLeave:Connect(function()
+                    Tween(row, { BackgroundTransparency = 1 }, EASE.Snap)
+                end)
+            end
+
+            local ROW, ROW_D = 38, 52
+
+            ------------------------------------------------------------
+            function G:CreateLabel(text)
+                return Themed(New("TextLabel", {
+                    Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1,
+                    Text = tostring(text), TextColor3 = Theme.TextDim,
+                    TextSize = 11, Font = Enum.Font.GothamMedium,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    ZIndex = 18, Parent = card,
+                }, { Pad(0, 0, 12, 0) }), "TextColor3", "TextDim")
+            end
+
+            function G:CreateDivider()
+                return New("Frame", {
+                    Size = UDim2.new(1, -16, 0, 1), Position = UDim2.fromOffset(8, 0),
+                    BackgroundColor3 = Theme.BorderSoft, BackgroundTransparency = 0.45,
+                    BorderSizePixel = 0, ZIndex = 18, Parent = card,
                 })
             end
-        end
 
-        ----------------------------------------------------------------
-        function Tab:CreateSection(title)
-            local holder = New("Frame", {
-                Size = UDim2.new(1, 0, 0, 24),
-                BackgroundTransparency = 1, ZIndex = 16, Parent = page,
-            })
-            New("TextLabel", {
-                Size = UDim2.new(1, 0, 1, 0),
-                BackgroundTransparency = 1,
-                Text = string.upper(tostring(title or "Section")),
-                TextColor3 = hue, TextSize = 10, Font = Enum.Font.GothamBold,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                TextYAlignment = Enum.TextYAlignment.Bottom,
-                ZIndex = 17, Parent = holder,
-            })
-            return holder
-        end
-
-        function Tab:CreateDivider()
-            return New("Frame", {
-                Size = UDim2.new(1, 0, 0, 1),
-                BackgroundColor3 = Theme.BorderSoft, BackgroundTransparency = 0.4,
-                BorderSizePixel = 0, ZIndex = 16, Parent = page,
-            })
-        end
-
-        function Tab:CreateParagraph(cfg)
-            cfg = cfg or {}
-            local box = New("Frame", {
-                Size = UDim2.new(1, 0, 0, 0),
-                AutomaticSize = Enum.AutomaticSize.Y,
-                BackgroundColor3 = Theme.Surface, BackgroundTransparency = 0.35,
-                BorderSizePixel = 0, ZIndex = 16, Parent = page,
-            }, { Corner(11), Stroke(Theme.BorderSoft, 1, 0.55), Pad(11, 12, 14, 14), List(4) })
-            New("TextLabel", {
-                Size = UDim2.new(1, 0, 0, 16),
-                BackgroundTransparency = 1,
-                Text = tostring(cfg.Title or ""),
-                TextColor3 = Theme.Text, TextSize = 12.5, Font = Enum.Font.GothamBold,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                LayoutOrder = 1, ZIndex = 17, Parent = box,
-            })
-            New("TextLabel", {
-                Size = UDim2.new(1, 0, 0, 0),
-                AutomaticSize = Enum.AutomaticSize.Y,
-                BackgroundTransparency = 1,
-                Text = tostring(cfg.Content or ""),
-                TextColor3 = Theme.TextSub, TextSize = 11.5, Font = Enum.Font.Gotham,
-                TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true,
-                LayoutOrder = 2, ZIndex = 17, Parent = box,
-            })
-            return box
-        end
-
-        function Tab:CreateButton(cfg)
-            cfg = cfg or {}
-            local row = Row(cfg.Description and ROW_D or ROW)
-            RowText(row, cfg.Name or "Button", cfg.Description, cfg.Icon)
-            local arrow = RenderIcon("arrow-right", row, 13, Theme.TextDim, 19)
-            arrow.AnchorPoint = Vector2.new(1, 0.5)
-            arrow.Position = UDim2.new(1, -14, 0.5, 0)
-            local hit = New("TextButton", {
-                Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-                AutoButtonColor = false, Text = "", ZIndex = 20, Parent = row,
-            })
-            hit.MouseEnter:Connect(function()
-                Tween(row, { BackgroundTransparency = 0.1, BackgroundColor3 = Theme.SurfaceAlt }, EASE.Snap)
-                TintIcon(arrow, hue)
-                Tween(arrow, { Position = UDim2.new(1, -10, 0.5, 0) }, EASE.Snap)
-            end)
-            hit.MouseLeave:Connect(function()
-                Tween(row, { BackgroundTransparency = 0.3, BackgroundColor3 = Theme.Surface }, EASE.Snap)
-                TintIcon(arrow, Theme.TextDim)
-                Tween(arrow, { Position = UDim2.new(1, -14, 0.5, 0) }, EASE.Snap)
-            end)
-            hit.MouseButton1Click:Connect(function()
-                Ripple(row)
-                if cfg.Callback then task.spawn(cfg.Callback) end
-            end)
-            return { Instance = row }
-        end
-
-        function Tab:CreateToggle(cfg, flag)
-            cfg = cfg or {}
-            local state = cfg.CurrentValue == true
-            local row = Row(cfg.Description and ROW_D or ROW)
-            RowText(row, cfg.Name or "Toggle", cfg.Description, cfg.Icon)
-
-            local track = New("Frame", {
-                AnchorPoint = Vector2.new(1, 0.5),
-                Position = UDim2.new(1, -14, 0.5, 0),
-                Size = UDim2.fromOffset(38, 21),
-                BackgroundColor3 = state and hue or Theme.Elevated,
-                BackgroundTransparency = state and 0.15 or 0.25,
-                BorderSizePixel = 0, ZIndex = 19, Parent = row,
-            }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
-            local knob = New("Frame", {
-                AnchorPoint = Vector2.new(0, 0.5),
-                Position = UDim2.new(0, state and 20 or 3, 0.5, 0),
-                Size = UDim2.fromOffset(15, 15),
-                BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                BorderSizePixel = 0, ZIndex = 20, Parent = track,
-            }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
-
-            local api = {}
-            function api:Set(v, silent)
-                state = v and true or false
-                if flag then NelyX.Flags[flag] = state end
-                Tween(track, {
-                    BackgroundColor3 = state and hue or Theme.Elevated,
-                    BackgroundTransparency = state and 0.15 or 0.25,
-                }, EASE.Snap)
-                Tween(knob, { Position = UDim2.new(0, state and 20 or 3, 0.5, 0) }, EASE.Pop)
-                if cfg.Callback and not silent then task.spawn(cfg.Callback, state) end
-            end
-            api.Instance = row
-
-            local hit = New("TextButton", {
-                Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-                AutoButtonColor = false, Text = "", ZIndex = 21, Parent = row,
-            })
-            hit.MouseButton1Click:Connect(function()
-                Ripple(row)
-                api:Set(not state)
-            end)
-            hit.MouseEnter:Connect(function()
-                Tween(row, { BackgroundTransparency = 0.1 }, EASE.Snap)
-            end)
-            hit.MouseLeave:Connect(function()
-                Tween(row, { BackgroundTransparency = 0.3 }, EASE.Snap)
-            end)
-
-            if flag then NelyX.Flags[flag] = state end
-            if state and cfg.Callback then task.spawn(cfg.Callback, true) end
-            return Window:RegisterElement(flag, api)
-        end
-
-        function Tab:CreateSlider(cfg, flag)
-            cfg = cfg or {}
-            local range = cfg.Range or { 0, 100 }
-            local inc   = cfg.Increment or 1
-            local value = cfg.CurrentValue or range[1]
-            local row = Row(cfg.Description and 62 or 50)
-            RowText(row, cfg.Name or "Slider", cfg.Description, cfg.Icon)
-
-            local readout = New("TextLabel", {
-                AnchorPoint = Vector2.new(1, 0),
-                Position = UDim2.new(1, -14, 0, 9),
-                Size = UDim2.fromOffset(64, 16),
-                BackgroundTransparency = 1,
-                Text = tostring(value) .. (cfg.Suffix or ""),
-                TextColor3 = hue, TextSize = 12, Font = Enum.Font.GothamBold,
-                TextXAlignment = Enum.TextXAlignment.Right,
-                ZIndex = 19, Parent = row,
-            })
-
-            local barY = cfg.Description and 46 or 34
-            local bar = New("Frame", {
-                Position = UDim2.new(0, 14, 0, barY),
-                Size = UDim2.new(1, -28, 0, 5),
-                BackgroundColor3 = Theme.Elevated, BackgroundTransparency = 0.3,
-                BorderSizePixel = 0, ZIndex = 19, Parent = row,
-            }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
-            local fill = New("Frame", {
-                Size = UDim2.fromScale((value - range[1]) / math.max(range[2] - range[1], 1), 1),
-                BackgroundColor3 = hue, BorderSizePixel = 0,
-                ZIndex = 20, Parent = bar,
-            }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
-            local grip = New("Frame", {
-                AnchorPoint = Vector2.new(0.5, 0.5),
-                Position = UDim2.fromScale(fill.Size.X.Scale, 0.5),
-                Size = UDim2.fromOffset(13, 13),
-                BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                BorderSizePixel = 0, ZIndex = 21, Parent = bar,
-            }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
-
-            local api = {}
-            function api:Set(v, silent)
-                v = math.clamp(v, range[1], range[2])
-                v = math.floor(v / inc + 0.5) * inc
-                if inc < 1 then v = tonumber(string.format("%.2f", v)) end
-                value = v
-                if flag then NelyX.Flags[flag] = v end
-                local a = (v - range[1]) / math.max(range[2] - range[1], 1)
-                Tween(fill, { Size = UDim2.fromScale(a, 1) }, EASE.Snap)
-                Tween(grip, { Position = UDim2.fromScale(a, 0.5) }, EASE.Snap)
-                readout.Text = tostring(v) .. (cfg.Suffix or "")
-                if cfg.Callback and not silent then task.spawn(cfg.Callback, v) end
-            end
-            api.Instance = row
-
-            local dragging = false
-            local function fromX(px)
-                local a = math.clamp((px - bar.AbsolutePosition.X) / math.max(bar.AbsoluteSize.X, 1), 0, 1)
-                api:Set(range[1] + a * (range[2] - range[1]))
-            end
-            local hit = New("TextButton", {
-                Position = UDim2.new(0, 8, 0, barY - 10),
-                Size = UDim2.new(1, -16, 0, 25),
-                BackgroundTransparency = 1, AutoButtonColor = false, Text = "",
-                ZIndex = 22, Parent = row,
-            })
-            hit.InputBegan:Connect(function(i)
-                if i.UserInputType == Enum.UserInputType.MouseButton1
-                   or i.UserInputType == Enum.UserInputType.Touch then
-                    dragging = true
-                    Tween(grip, { Size = UDim2.fromOffset(17, 17) }, EASE.Snap)
-                    fromX(i.Position.X)
-                end
-            end)
-            UserInputService.InputChanged:Connect(function(i)
-                if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
-                   or i.UserInputType == Enum.UserInputType.Touch) then
-                    fromX(i.Position.X)
-                end
-            end)
-            UserInputService.InputEnded:Connect(function(i)
-                if dragging and (i.UserInputType == Enum.UserInputType.MouseButton1
-                   or i.UserInputType == Enum.UserInputType.Touch) then
-                    dragging = false
-                    Tween(grip, { Size = UDim2.fromOffset(13, 13) }, EASE.Snap)
-                end
-            end)
-
-            if flag then NelyX.Flags[flag] = value end
-            return Window:RegisterElement(flag, api)
-        end
-
-        function Tab:CreateInput(cfg, flag)
-            cfg = cfg or {}
-            local row = Row(cfg.Description and ROW_D or ROW)
-            RowText(row, cfg.Name or "Input", cfg.Description, cfg.Icon)
-            local wrap = New("Frame", {
-                AnchorPoint = Vector2.new(1, 0.5),
-                Position = UDim2.new(1, -14, 0.5, 0),
-                Size = UDim2.fromOffset(140, 26),
-                BackgroundColor3 = Theme.Elevated, BackgroundTransparency = 0.25,
-                BorderSizePixel = 0, ZIndex = 19, Parent = row,
-            }, { Corner(8), Stroke(Theme.BorderSoft, 1, 0.5) })
-            local box = New("TextBox", {
-                Size = UDim2.new(1, -16, 1, 0), Position = UDim2.fromOffset(8, 0),
-                BackgroundTransparency = 1,
-                Text = "", PlaceholderText = cfg.PlaceholderText or "",
-                PlaceholderColor3 = Theme.TextDim,
-                TextColor3 = Theme.Text, TextSize = 12, Font = Enum.Font.Gotham,
-                TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
-                ZIndex = 20, Parent = wrap,
-            })
-            local api = { Instance = row }
-            function api:Set(v, silent)
-                box.Text = tostring(v or "")
-                if flag then NelyX.Flags[flag] = box.Text end
-                if cfg.Callback and not silent then task.spawn(cfg.Callback, box.Text) end
-            end
-            box.Focused:Connect(function()
-                Tween(wrap, { BackgroundTransparency = 0.1 }, EASE.Snap)
-            end)
-            box.FocusLost:Connect(function()
-                Tween(wrap, { BackgroundTransparency = 0.25 }, EASE.Snap)
-                if flag then NelyX.Flags[flag] = box.Text end
-                if cfg.Callback then task.spawn(cfg.Callback, box.Text) end
-            end)
-            return Window:RegisterElement(flag, api)
-        end
-
-        function Tab:CreateDropdown(cfg, flag)
-            cfg = cfg or {}
-            local options  = cfg.Options or {}
-            local multi    = cfg.MultiSelect == true
-            local selected = {}
-            for _, v in ipairs(cfg.CurrentOption or {}) do selected[v] = true end
-
-            local row = New("Frame", {
-                Size = UDim2.new(1, 0, 0, ROW),
-                BackgroundColor3 = Theme.Surface, BackgroundTransparency = 0.3,
-                BorderSizePixel = 0, ClipsDescendants = true,
-                ZIndex = 16, Parent = page,
-            }, { Corner(11), Stroke(Theme.BorderSoft, 1, 0.55) })
-            RowText(row, cfg.Name or "Dropdown", nil, cfg.Icon)
-
-            local valueLabel = New("TextLabel", {
-                AnchorPoint = Vector2.new(1, 0),
-                Position = UDim2.new(1, -32, 0, 0),
-                Size = UDim2.fromOffset(150, ROW),
-                BackgroundTransparency = 1,
-                Text = "", TextColor3 = Theme.TextSub, TextSize = 12,
-                Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Right,
-                TextTruncate = Enum.TextTruncate.AtEnd,
-                ZIndex = 19, Parent = row,
-            })
-            local caret = RenderIcon("chevron-down", row, 13, Theme.TextDim, 19)
-            caret.AnchorPoint = Vector2.new(1, 0)
-            caret.Position = UDim2.new(1, -14, 0, 13)
-
-            local host = New("Frame", {
-                Position = UDim2.fromOffset(0, ROW),
-                Size = UDim2.new(1, 0, 0, 0),
-                AutomaticSize = Enum.AutomaticSize.Y,
-                BackgroundTransparency = 1, ZIndex = 18, Parent = row,
-            }, { List(3), Pad(2, 8, 10, 10) })
-
-            local function summary()
-                local picked = {}
-                for _, o in ipairs(options) do if selected[o] then picked[#picked + 1] = o end end
-                valueLabel.Text = #picked > 0 and table.concat(picked, ", ") or "--"
-            end
-
-            local entries, expanded = {}, false
-            local function build()
-                for _, c in ipairs(host:GetChildren()) do
-                    if c:IsA("TextButton") then c:Destroy() end
-                end
-                entries = {}
-                for i, opt in ipairs(options) do
-                    local e = New("TextButton", {
-                        Size = UDim2.new(1, 0, 0, 28),
-                        BackgroundColor3 = Theme.Elevated, BackgroundTransparency = 0.4,
-                        AutoButtonColor = false, Text = "", LayoutOrder = i,
-                        ZIndex = 19, Parent = host,
-                    }, { Corner(7) })
-                    New("TextLabel", {
-                        Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -34, 1, 0),
-                        BackgroundTransparency = 1, Text = tostring(opt),
-                        TextColor3 = Theme.TextSub, TextSize = 11.5, Font = Enum.Font.Gotham,
+            function G:CreateParagraph(pcfg)
+                pcfg = pcfg or {}
+                local box = New("Frame", {
+                    Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+                    BackgroundTransparency = 1, ZIndex = 18, Parent = card,
+                }, { Pad(8, 8, 12, 12), List(3) })
+                if pcfg.Title then
+                    Themed(New("TextLabel", {
+                        Size = UDim2.new(1, 0, 0, 15), BackgroundTransparency = 1,
+                        Text = tostring(pcfg.Title), TextColor3 = Theme.Text,
+                        TextSize = 12, Font = Enum.Font.GothamBold,
                         TextXAlignment = Enum.TextXAlignment.Left,
-                        TextTruncate = Enum.TextTruncate.AtEnd,
-                        ZIndex = 20, Parent = e,
+                        LayoutOrder = 1, ZIndex = 19, Parent = box,
+                    }), "TextColor3", "Text")
+                end
+                Themed(New("TextLabel", {
+                    Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+                    BackgroundTransparency = 1, Text = tostring(pcfg.Content or ""),
+                    TextColor3 = Theme.TextDim, TextSize = 11, Font = Enum.Font.Gotham,
+                    TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true,
+                    LayoutOrder = 2, ZIndex = 19, Parent = box,
+                }), "TextColor3", "TextDim")
+                return box
+            end
+
+            function G:CreateButton(bcfg)
+                bcfg = bcfg or {}
+                local row = Row(bcfg.Description and ROW_D or ROW)
+                RowText(row, bcfg.Name or "Button", bcfg.Description, bcfg.Info)
+                local arrow = RenderIcon("arrow-right", row, 13, "TextDim", 20)
+                arrow.AnchorPoint = Vector2.new(1, 0.5)
+                arrow.Position = UDim2.new(1, -12, 0.5, 0)
+                local hit = New("TextButton", {
+                    Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+                    AutoButtonColor = false, Text = "", ZIndex = 21, Parent = row,
+                })
+                Hoverable(row, hit)
+                hit.MouseEnter:Connect(function()
+                    TintIcon(arrow, Theme.Accent)
+                    Tween(arrow, { Position = UDim2.new(1, -9, 0.5, 0) }, EASE.Snap)
+                end)
+                hit.MouseLeave:Connect(function()
+                    TintIcon(arrow, Theme.TextDim)
+                    Tween(arrow, { Position = UDim2.new(1, -12, 0.5, 0) }, EASE.Snap)
+                end)
+                hit.MouseButton1Click:Connect(function()
+                    Ripple(row)
+                    if bcfg.Callback then task.spawn(bcfg.Callback) end
+                end)
+                return { Instance = row }
+            end
+
+            function G:CreateToggle(tcfg, flag)
+                tcfg = tcfg or {}
+                local state = tcfg.CurrentValue == true
+                local disabled = tcfg.Disabled == true
+                local row = Row(tcfg.Description and ROW_D or ROW)
+                RowText(row, tcfg.Name or "Toggle", tcfg.Description, tcfg.Info, disabled)
+
+                local track = New("Frame", {
+                    AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0),
+                    Size = UDim2.fromOffset(40, 22),
+                    BackgroundColor3 = state and Theme.Accent or Theme.Elevated,
+                    BackgroundTransparency = disabled and 0.6 or (state and 0.05 or 0.2),
+                    BorderSizePixel = 0, ZIndex = 20, Parent = row,
+                }, { Round() })
+                local knob = New("Frame", {
+                    AnchorPoint = Vector2.new(0, 0.5),
+                    Position = UDim2.new(0, state and 21 or 3, 0.5, 0),
+                    Size = UDim2.fromOffset(16, 16),
+                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+                    BackgroundTransparency = disabled and 0.4 or 0,
+                    BorderSizePixel = 0, ZIndex = 21, Parent = track,
+                }, { Round() })
+
+                local api = { Instance = row }
+                function api:Set(v, silent)
+                    state = v and true or false
+                    if flag then Nely.Flags[flag] = state end
+                    Tween(track, {
+                        BackgroundColor3 = state and Theme.Accent or Theme.Elevated,
+                        BackgroundTransparency = state and 0.05 or 0.2,
+                    }, EASE.Snap)
+                    Tween(knob, { Position = UDim2.new(0, state and 21 or 3, 0.5, 0) }, EASE.Pop)
+                    if tcfg.Callback and not silent then task.spawn(tcfg.Callback, state) end
+                end
+                function api:SetDisabled(d)
+                    disabled = d and true or false
+                    Tween(track, { BackgroundTransparency = disabled and 0.6
+                                   or (state and 0.05 or 0.2) }, EASE.Snap)
+                end
+
+                if not disabled then
+                    local hit = New("TextButton", {
+                        Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+                        AutoButtonColor = false, Text = "", ZIndex = 22, Parent = row,
                     })
-                    local tick = RenderIcon("check", e, 12, hue, 20)
-                    tick.AnchorPoint = Vector2.new(1, 0.5)
-                    tick.Position = UDim2.new(1, -9, 0.5, 0)
-                    tick.Visible = selected[opt] == true
-                    entries[opt] = tick
-                    e.MouseButton1Click:Connect(function()
-                        if multi then
-                            selected[opt] = (not selected[opt]) or nil
-                        else
-                            selected = { [opt] = true }
-                        end
-                        for o, t in pairs(entries) do t.Visible = selected[o] == true end
-                        summary()
-                        if flag then NelyX.Flags[flag] = multi and selected or opt end
-                        if cfg.Callback then
-                            if multi then
-                                local picked = {}
-                                for _, o in ipairs(options) do
-                                    if selected[o] then picked[#picked + 1] = o end
+                    Hoverable(row, hit)
+                    hit.MouseButton1Click:Connect(function() Ripple(row) api:Set(not state) end)
+                end
+
+                if flag then Nely.Flags[flag] = state end
+                if state and tcfg.Callback then task.spawn(tcfg.Callback, true) end
+                return W:RegisterElement(flag, api)
+            end
+
+            function G:CreateSlider(scfg, flag)
+                scfg = scfg or {}
+                local range = scfg.Range or { 0, 100 }
+                local inc   = scfg.Increment or 1
+                local value = scfg.CurrentValue or range[1]
+                local row = Row(ROW)
+                RowText(row, scfg.Name or "Slider", nil, scfg.Info)
+
+                local readout = Themed(New("TextLabel", {
+                    AnchorPoint = Vector2.new(1, 0.5),
+                    Position = UDim2.new(1, -150, 0.5, 0), Size = UDim2.fromOffset(70, 16),
+                    BackgroundTransparency = 1,
+                    Text = tostring(value) .. (scfg.Suffix or ""),
+                    TextColor3 = Theme.TextSub, TextSize = 11.5, Font = Enum.Font.GothamMedium,
+                    TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 20, Parent = row,
+                }), "TextColor3", "TextSub")
+
+                local bar = New("Frame", {
+                    AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0),
+                    Size = UDim2.fromOffset(132, 5), BackgroundColor3 = Theme.Elevated,
+                    BackgroundTransparency = 0.25, BorderSizePixel = 0,
+                    ZIndex = 20, Parent = row,
+                }, { Round() })
+                Themed(bar, "BackgroundColor3", "Elevated")
+                local a0 = (value - range[1]) / math.max(range[2] - range[1], 1)
+                local fill = New("Frame", {
+                    Size = UDim2.fromScale(a0, 1), BackgroundColor3 = Theme.Accent,
+                    BorderSizePixel = 0, ZIndex = 21, Parent = bar,
+                }, { Round() })
+                local grip = New("Frame", {
+                    AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(a0, 0.5),
+                    Size = UDim2.fromOffset(13, 13),
+                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+                    BorderSizePixel = 0, ZIndex = 22, Parent = bar,
+                }, { Round() })
+
+                local api = { Instance = row }
+                function api:Set(v, silent)
+                    v = math.clamp(v, range[1], range[2])
+                    v = math.floor(v / inc + 0.5) * inc
+                    if inc < 1 then v = tonumber(string.format("%.2f", v)) end
+                    value = v
+                    if flag then Nely.Flags[flag] = v end
+                    local a = (v - range[1]) / math.max(range[2] - range[1], 1)
+                    Tween(fill, { Size = UDim2.fromScale(a, 1) }, EASE.Snap)
+                    Tween(grip, { Position = UDim2.fromScale(a, 0.5) }, EASE.Snap)
+                    readout.Text = tostring(v) .. (scfg.Suffix or "")
+                    if scfg.Callback and not silent then task.spawn(scfg.Callback, v) end
+                end
+
+                local dragging = false
+                local function fromX(px)
+                    local a = math.clamp((px - bar.AbsolutePosition.X)
+                              / math.max(bar.AbsoluteSize.X, 1), 0, 1)
+                    api:Set(range[1] + a * (range[2] - range[1]))
+                end
+                local hit = New("TextButton", {
+                    AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0),
+                    Size = UDim2.fromOffset(142, 26), BackgroundTransparency = 1,
+                    AutoButtonColor = false, Text = "", ZIndex = 23, Parent = row,
+                })
+                hit.InputBegan:Connect(function(i)
+                    if i.UserInputType == Enum.UserInputType.MouseButton1
+                       or i.UserInputType == Enum.UserInputType.Touch then
+                        dragging = true
+                        Tween(grip, { Size = UDim2.fromOffset(17, 17) }, EASE.Snap)
+                        fromX(i.Position.X)
+                    end
+                end)
+                UserInputService.InputChanged:Connect(function(i)
+                    if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+                       or i.UserInputType == Enum.UserInputType.Touch) then fromX(i.Position.X) end
+                end)
+                UserInputService.InputEnded:Connect(function(i)
+                    if dragging and (i.UserInputType == Enum.UserInputType.MouseButton1
+                       or i.UserInputType == Enum.UserInputType.Touch) then
+                        dragging = false
+                        Tween(grip, { Size = UDim2.fromOffset(13, 13) }, EASE.Snap)
+                    end
+                end)
+
+                if flag then Nely.Flags[flag] = value end
+                return W:RegisterElement(flag, api)
+            end
+
+            function G:CreateDropdown(dcfg, flag)
+                dcfg = dcfg or {}
+                local options  = dcfg.Options or {}
+                local multi    = dcfg.MultiSelect == true
+                local selected = {}
+                for _, v in ipairs(dcfg.CurrentOption or {}) do selected[v] = true end
+
+                local row = New("Frame", {
+                    Size = UDim2.new(1, 0, 0, ROW), BackgroundColor3 = Theme.SurfaceAlt,
+                    BackgroundTransparency = 1, BorderSizePixel = 0,
+                    ClipsDescendants = true, ZIndex = 18, Parent = card,
+                }, { Corner(10) })
+                RowText(row, dcfg.Name or "Dropdown", nil, dcfg.Info)
+
+                local pill = Themed(New("Frame", {
+                    AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 7),
+                    Size = UDim2.fromOffset(150, 24), BackgroundColor3 = Theme.Elevated,
+                    BackgroundTransparency = 0.25, BorderSizePixel = 0,
+                    ZIndex = 20, Parent = row,
+                }, { Corner(8), Stroke("BorderSoft", 1, 0.5) }), "BackgroundColor3", "Elevated")
+                local valueLabel = Themed(New("TextLabel", {
+                    Position = UDim2.fromOffset(9, 0), Size = UDim2.new(1, -28, 1, 0),
+                    BackgroundTransparency = 1, Text = "--", TextColor3 = Theme.TextSub,
+                    TextSize = 11.5, Font = Enum.Font.Gotham,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 21, Parent = pill,
+                }), "TextColor3", "TextSub")
+                local caret = RenderIcon("chevron-down", pill, 12, "TextDim", 21)
+                caret.AnchorPoint = Vector2.new(1, 0.5)
+                caret.Position = UDim2.new(1, -8, 0.5, 0)
+
+                local host = New("Frame", {
+                    Position = UDim2.fromOffset(0, ROW), Size = UDim2.new(1, 0, 0, 0),
+                    AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
+                    ZIndex = 19, Parent = row,
+                }, { List(3), Pad(0, 8, 10, 10) })
+
+                local function summary()
+                    local picked = {}
+                    for _, o in ipairs(options) do if selected[o] then picked[#picked + 1] = o end end
+                    valueLabel.Text = #picked > 0 and table.concat(picked, ", ") or "--"
+                end
+
+                local entries = {}
+                local function build()
+                    for _, c in ipairs(host:GetChildren()) do
+                        if c:IsA("TextButton") then c:Destroy() end
+                    end
+                    entries = {}
+                    for i, opt in ipairs(options) do
+                        local e = New("TextButton", {
+                            Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = Theme.Elevated,
+                            BackgroundTransparency = 0.35, AutoButtonColor = false,
+                            Text = "", LayoutOrder = i, ZIndex = 20, Parent = host,
+                        }, { Corner(7) })
+                        New("TextLabel", {
+                            Position = UDim2.fromOffset(9, 0), Size = UDim2.new(1, -32, 1, 0),
+                            BackgroundTransparency = 1, Text = tostring(opt),
+                            TextColor3 = Theme.TextSub, TextSize = 11, Font = Enum.Font.Gotham,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            TextTruncate = Enum.TextTruncate.AtEnd,
+                            ZIndex = 21, Parent = e,
+                        })
+                        local tick = RenderIcon("check", e, 11, "Accent", 21)
+                        tick.AnchorPoint = Vector2.new(1, 0.5)
+                        tick.Position = UDim2.new(1, -8, 0.5, 0)
+                        tick.Visible = selected[opt] == true
+                        entries[opt] = tick
+                        e.MouseButton1Click:Connect(function()
+                            if multi then selected[opt] = (not selected[opt]) or nil
+                            else selected = { [opt] = true } end
+                            for o, t in pairs(entries) do t.Visible = selected[o] == true end
+                            summary()
+                            if flag then Nely.Flags[flag] = multi and selected or opt end
+                            if dcfg.Callback then
+                                if multi then
+                                    local picked = {}
+                                    for _, o in ipairs(options) do
+                                        if selected[o] then picked[#picked + 1] = o end
+                                    end
+                                    task.spawn(dcfg.Callback, picked)
+                                else
+                                    task.spawn(dcfg.Callback, opt)
                                 end
-                                task.spawn(cfg.Callback, picked)
-                            else
-                                task.spawn(cfg.Callback, opt)
                             end
+                        end)
+                    end
+                end
+                build() summary()
+
+                local expanded = false
+                local header = New("TextButton", {
+                    Size = UDim2.new(1, 0, 0, ROW), BackgroundTransparency = 1,
+                    AutoButtonColor = false, Text = "", ZIndex = 22, Parent = row,
+                })
+                Hoverable(row, header)
+                header.MouseButton1Click:Connect(function()
+                    expanded = not expanded
+                    Tween(row, { Size = UDim2.new(1, 0, 0,
+                        expanded and (ROW + host.AbsoluteSize.Y + 8) or ROW) }, EASE.Glide)
+                    Tween(caret, { Rotation = expanded and 180 or 0 }, EASE.Glide)
+                end)
+
+                local api = { Instance = row }
+                function api:Set(newCfg)
+                    if type(newCfg) == "table" and newCfg.Options then
+                        options = newCfg.Options build()
+                    end
+                    if type(newCfg) == "table" and newCfg.CurrentOption then
+                        selected = {}
+                        for _, v in ipairs(newCfg.CurrentOption) do selected[v] = true end
+                        for o, t in pairs(entries) do t.Visible = selected[o] == true end
+                    end
+                    summary()
+                end
+                return W:RegisterElement(flag, api)
+            end
+
+            function G:CreateInput(icfg, flag)
+                icfg = icfg or {}
+                local row = Row(ROW)
+                RowText(row, icfg.Name or "Input", nil, icfg.Info)
+                local wrap = Themed(New("Frame", {
+                    AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0),
+                    Size = UDim2.fromOffset(150, 24), BackgroundColor3 = Theme.Elevated,
+                    BackgroundTransparency = 0.25, BorderSizePixel = 0,
+                    ZIndex = 20, Parent = row,
+                }, { Corner(8), Stroke("BorderSoft", 1, 0.5) }), "BackgroundColor3", "Elevated")
+                local box = Themed(New("TextBox", {
+                    Position = UDim2.fromOffset(9, 0), Size = UDim2.new(1, -18, 1, 0),
+                    BackgroundTransparency = 1, Text = "",
+                    PlaceholderText = icfg.PlaceholderText or "",
+                    PlaceholderColor3 = Theme.TextDim, TextColor3 = Theme.Text,
+                    TextSize = 11.5, Font = Enum.Font.Gotham,
+                    TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
+                    ZIndex = 21, Parent = wrap,
+                }), "TextColor3", "Text")
+                local api = { Instance = row }
+                function api:Set(v, silent)
+                    box.Text = tostring(v or "")
+                    if flag then Nely.Flags[flag] = box.Text end
+                    if icfg.Callback and not silent then task.spawn(icfg.Callback, box.Text) end
+                end
+                box.Focused:Connect(function()
+                    Tween(wrap, { BackgroundTransparency = 0.05 }, EASE.Snap)
+                end)
+                -- live filtering feels broken if it only fires on focus loss
+                box:GetPropertyChangedSignal("Text"):Connect(function()
+                    if flag then Nely.Flags[flag] = box.Text end
+                    if icfg.Live ~= false and icfg.Callback then
+                        task.spawn(icfg.Callback, box.Text)
+                    end
+                end)
+                box.FocusLost:Connect(function()
+                    Tween(wrap, { BackgroundTransparency = 0.25 }, EASE.Snap)
+                    if icfg.Live == false and icfg.Callback then
+                        task.spawn(icfg.Callback, box.Text)
+                    end
+                end)
+                return W:RegisterElement(flag, api)
+            end
+
+            function G:CreateKeybind(kcfg, flag)
+                kcfg = kcfg or {}
+                local row = Row(ROW)
+                RowText(row, kcfg.Name or "Keybind", nil, kcfg.Info)
+                local listening = false
+                local chip = Themed(New("TextButton", {
+                    AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0),
+                    Size = UDim2.fromOffset(78, 24), BackgroundColor3 = Theme.Elevated,
+                    BackgroundTransparency = 0.25, AutoButtonColor = false,
+                    Text = tostring(kcfg.CurrentBind or "Unknown"),
+                    TextColor3 = Theme.TextSub, TextSize = 11, Font = Enum.Font.GothamMedium,
+                    ZIndex = 20, Parent = row,
+                }, { Corner(8), Stroke("BorderSoft", 1, 0.5) }), "BackgroundColor3", "Elevated")
+                -- HOLD hint, like the reference
+                Themed(New("TextLabel", {
+                    AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -96, 0.5, 0),
+                    Size = UDim2.fromOffset(34, 14), BackgroundTransparency = 1,
+                    Text = "HOLD", TextColor3 = Theme.TextDim, TextSize = 9,
+                    Font = Enum.Font.GothamBold, ZIndex = 20, Parent = row,
+                }), "TextColor3", "TextDim")
+
+                chip.MouseButton1Click:Connect(function()
+                    listening = true chip.Text = "..."
+                    Tween(chip, { BackgroundTransparency = 0.02 }, EASE.Snap)
+                end)
+                UserInputService.InputBegan:Connect(function(i, typing)
+                    if not listening or typing then return end
+                    if i.UserInputType == Enum.UserInputType.Keyboard then
+                        listening = false
+                        chip.Text = i.KeyCode.Name
+                        Tween(chip, { BackgroundTransparency = 0.25 }, EASE.Snap)
+                        if flag then Nely.Flags[flag] = i.KeyCode end
+                        if kcfg.OnChanged then task.spawn(kcfg.OnChanged, i.KeyCode) end
+                    end
+                end)
+                local api = { Instance = row }
+                function api:Set(k)
+                    if typeof(k) == "EnumItem" then
+                        chip.Text = k.Name
+                        if flag then Nely.Flags[flag] = k end
+                        if kcfg.OnChanged then task.spawn(kcfg.OnChanged, k) end
+                    end
+                end
+                return W:RegisterElement(flag, api)
+            end
+
+            function G:CreateColorpicker(ccfg, flag)
+                ccfg = ccfg or {}
+                local colour = ccfg.CurrentValue or Theme.Accent
+                local row = Row(ROW)
+                RowText(row, ccfg.Name or "Colour", nil, ccfg.Info)
+                local swatch = New("TextButton", {
+                    AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0),
+                    Size = UDim2.fromOffset(40, 22), BackgroundColor3 = colour,
+                    AutoButtonColor = false, Text = "", BorderSizePixel = 0,
+                    ZIndex = 20, Parent = row,
+                }, { Corner(7), Stroke("Border", 1, 0.4) })
+
+                local strip = New("Frame", {
+                    Position = UDim2.new(0, 12, 0, ROW - 6), Size = UDim2.new(1, -24, 0, 0),
+                    BackgroundColor3 = Color3.fromRGB(255, 255, 255), BorderSizePixel = 0,
+                    ClipsDescendants = true, ZIndex = 20, Parent = row,
+                }, {
+                    Corner(6),
+                    New("UIGradient", { Color = ColorSequence.new({
+                        ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 0, 0)),
+                        ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 255, 0)),
+                        ColorSequenceKeypoint.new(0.34, Color3.fromRGB(0, 255, 0)),
+                        ColorSequenceKeypoint.new(0.51, Color3.fromRGB(0, 255, 255)),
+                        ColorSequenceKeypoint.new(0.68, Color3.fromRGB(0, 0, 255)),
+                        ColorSequenceKeypoint.new(0.85, Color3.fromRGB(255, 0, 255)),
+                        ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 0, 0)),
+                    }) }),
+                })
+
+                local api = { Instance = row }
+                function api:Set(c, silent)
+                    if typeof(c) ~= "Color3" then return end
+                    colour = c
+                    swatch.BackgroundColor3 = c
+                    if flag then Nely.Flags[flag] = c end
+                    if ccfg.Callback and not silent then task.spawn(ccfg.Callback, c) end
+                end
+
+                local open = false
+                swatch.MouseButton1Click:Connect(function()
+                    open = not open
+                    Tween(row, { Size = UDim2.new(1, 0, 0, open and (ROW + 32) or ROW) }, EASE.Glide)
+                    Tween(strip, { Size = UDim2.new(1, -24, 0, open and 18 or 0) }, EASE.Glide)
+                end)
+                local picking = false
+                local function pick(px)
+                    local a = math.clamp((px - strip.AbsolutePosition.X)
+                              / math.max(strip.AbsoluteSize.X, 1), 0, 1)
+                    api:Set(Color3.fromHSV(a, 0.72, 1))
+                end
+                strip.InputBegan:Connect(function(i)
+                    if i.UserInputType == Enum.UserInputType.MouseButton1
+                       or i.UserInputType == Enum.UserInputType.Touch then
+                        picking = true pick(i.Position.X)
+                    end
+                end)
+                UserInputService.InputChanged:Connect(function(i)
+                    if picking and (i.UserInputType == Enum.UserInputType.MouseMovement
+                       or i.UserInputType == Enum.UserInputType.Touch) then pick(i.Position.X) end
+                end)
+                UserInputService.InputEnded:Connect(function(i)
+                    if i.UserInputType == Enum.UserInputType.MouseButton1
+                       or i.UserInputType == Enum.UserInputType.Touch then picking = false end
+                end)
+
+                if flag then Nely.Flags[flag] = colour end
+                return W:RegisterElement(flag, api)
+            end
+
+            ------------------------------------------------------------
+            -- ITEM GRID
+            ------------------------------------------------------------
+            function G:CreateItemGrid(gridCfg)
+                gridCfg = gridCfg or {}
+                local cardW = gridCfg.CardWidth or 92
+                local cardH = gridCfg.CardHeight or 106
+
+                local wrap = New("Frame", {
+                    Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+                    BackgroundTransparency = 1, ZIndex = 18, Parent = card,
+                }, { List(7), Pad(6, 8, 8, 8) })
+
+                local count = Themed(New("TextLabel", {
+                    Size = UDim2.new(1, 0, 0, 14), BackgroundTransparency = 1,
+                    Text = "", TextColor3 = Theme.TextDim, TextSize = 10.5,
+                    Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
+                    LayoutOrder = 1, ZIndex = 19, Parent = wrap,
+                }), "TextColor3", "TextDim")
+
+                local grid = New("Frame", {
+                    Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+                    BackgroundTransparency = 1, LayoutOrder = 2, ZIndex = 19, Parent = wrap,
+                }, {
+                    New("UIGridLayout", {
+                        CellSize = UDim2.fromOffset(cardW, cardH),
+                        CellPadding = UDim2.fromOffset(7, 7),
+                        SortOrder = Enum.SortOrder.LayoutOrder,
+                        HorizontalAlignment = Enum.HorizontalAlignment.Left,
+                    }),
+                })
+
+                local api = { Instance = wrap }
+
+                local function makeCard(item, order)
+                    local c = Themed(New("TextButton", {
+                        BackgroundColor3 = Theme.Elevated, BackgroundTransparency = 0.3,
+                        AutoButtonColor = false, Text = "", LayoutOrder = order,
+                        ClipsDescendants = true, ZIndex = 20, Parent = grid,
+                    }, { Corner(10), Stroke("BorderSoft", 1, 0.45) }),
+                        "BackgroundColor3", "Elevated")
+
+                    New("ImageLabel", {
+                        Name = "Art", Position = UDim2.fromOffset(0, 5),
+                        Size = UDim2.new(1, 0, 1, -26), BackgroundTransparency = 1,
+                        Image = tostring(item.Image or ""), ScaleType = Enum.ScaleType.Fit,
+                        ZIndex = 21, Parent = c,
+                    })
+
+                    Themed(New("TextLabel", {
+                        AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, -4),
+                        Size = UDim2.new(1, -6, 0, 13), BackgroundTransparency = 1,
+                        Text = tostring(item.Name or "?"), TextColor3 = Theme.TextSub,
+                        TextSize = 10, Font = Enum.Font.GothamMedium,
+                        TextTruncate = Enum.TextTruncate.AtEnd,
+                        ZIndex = 21, Parent = c,
+                    }, { Pad(0, 0, 5, 0) }), "TextColor3", "TextSub")
+
+                    if item.Badge and item.Badge ~= "" then
+                        local badge = New("Frame", {
+                            Position = UDim2.fromOffset(4, 4), Size = UDim2.fromOffset(0, 13),
+                            AutomaticSize = Enum.AutomaticSize.X,
+                            BackgroundColor3 = item.BadgeRainbow and Color3.fromRGB(255, 255, 255)
+                                               or (item.BadgeColor or Theme.Accent),
+                            BorderSizePixel = 0, ZIndex = 23, Parent = c,
+                        }, { Corner(4), Pad(0, 0, 4, 4) })
+                        if item.BadgeRainbow then
+                            New("UIGradient", { Color = ColorSequence.new({
+                                ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 96, 96)),
+                                ColorSequenceKeypoint.new(0.33, Color3.fromRGB(255, 226, 118)),
+                                ColorSequenceKeypoint.new(0.66, Color3.fromRGB(116, 240, 190)),
+                                ColorSequenceKeypoint.new(1.00, Color3.fromRGB(168, 140, 255)),
+                            }), Parent = badge })
+                        end
+                        New("TextLabel", {
+                            Size = UDim2.fromOffset(0, 13), AutomaticSize = Enum.AutomaticSize.X,
+                            BackgroundTransparency = 1,
+                            Text = string.upper(tostring(item.Badge)),
+                            TextColor3 = Color3.fromRGB(20, 20, 28), TextSize = 8,
+                            Font = Enum.Font.GothamBold, ZIndex = 24, Parent = badge,
+                        })
+                    end
+
+                    local st = c:FindFirstChildOfClass("UIStroke")
+                    c.MouseEnter:Connect(function()
+                        Tween(c, { BackgroundTransparency = 0.08 }, EASE.Snap)
+                        if st then Tween(st, { Color = Theme.Accent, Transparency = 0 }, EASE.Snap) end
+                    end)
+                    c.MouseLeave:Connect(function()
+                        Tween(c, { BackgroundTransparency = 0.3 }, EASE.Snap)
+                        if st then
+                            Tween(st, { Color = Theme.BorderSoft, Transparency = 0.45 }, EASE.Snap)
+                        end
+                    end)
+                    c.MouseButton1Click:Connect(function()
+                        Ripple(c)
+                        if gridCfg.Callback then
+                            task.spawn(gridCfg.Callback, item.Id or item.Name, item)
+                        end
+                    end)
+                    return c
+                end
+
+                -- Drawing hundreds of cards in one frame locks the client,
+                -- so the grid renders in batches with a yield between them.
+                local BATCH = 36
+                local cap = gridCfg.MaxCards or 260
+                local token = 0
+                function api:Render(list)
+                    token = token + 1
+                    local mine = token
+                    for _, c in ipairs(grid:GetChildren()) do
+                        if c:IsA("TextButton") then c:Destroy() end
+                    end
+                    local shown = math.min(#list, cap)
+                    count.Text = #list .. " items"
+                        .. (#list > cap and ("  --  showing first " .. cap) or "")
+                    task.spawn(function()
+                        for i = 1, shown do
+                            if token ~= mine then return end
+                            makeCard(list[i], i)
+                            if i % BATCH == 0 then task.wait() end
                         end
                     end)
                 end
-            end
-            build()
-            summary()
-
-            local header = New("TextButton", {
-                Size = UDim2.new(1, 0, 0, ROW), BackgroundTransparency = 1,
-                AutoButtonColor = false, Text = "", ZIndex = 21, Parent = row,
-            })
-            header.MouseButton1Click:Connect(function()
-                expanded = not expanded
-                local target = expanded and (ROW + host.AbsoluteSize.Y + 6) or ROW
-                Tween(row, { Size = UDim2.new(1, 0, 0, target) }, EASE.Glide)
-                Tween(caret, { Rotation = expanded and 180 or 0 }, EASE.Glide)
-            end)
-
-            local api = { Instance = row }
-            function api:Set(newCfg)
-                if type(newCfg) == "table" and newCfg.Options then
-                    options = newCfg.Options
-                    build()
-                end
-                if type(newCfg) == "table" and newCfg.CurrentOption then
-                    selected = {}
-                    for _, v in ipairs(newCfg.CurrentOption) do selected[v] = true end
-                    for o, t in pairs(entries) do t.Visible = selected[o] == true end
-                end
-                summary()
-            end
-            return Window:RegisterElement(flag, api)
-        end
-
-        function Tab:CreateKeybind(cfg, flag)
-            cfg = cfg or {}
-            local row = Row(cfg.Description and ROW_D or ROW)
-            RowText(row, cfg.Name or "Keybind", cfg.Description, cfg.Icon)
-            local current = cfg.CurrentBind or "Unknown"
-            local listening = false
-            local chip = New("TextButton", {
-                AnchorPoint = Vector2.new(1, 0.5),
-                Position = UDim2.new(1, -14, 0.5, 0),
-                Size = UDim2.fromOffset(72, 25),
-                BackgroundColor3 = Theme.Elevated, BackgroundTransparency = 0.25,
-                AutoButtonColor = false,
-                Text = tostring(current), TextColor3 = Theme.TextSub,
-                TextSize = 11.5, Font = Enum.Font.GothamMedium,
-                ZIndex = 19, Parent = row,
-            }, { Corner(8), Stroke(Theme.BorderSoft, 1, 0.5) })
-
-            chip.MouseButton1Click:Connect(function()
-                listening = true
-                chip.Text = "..."
-                Tween(chip, { BackgroundTransparency = 0.05 }, EASE.Snap)
-            end)
-            UserInputService.InputBegan:Connect(function(i, typing)
-                if not listening or typing then return end
-                if i.UserInputType == Enum.UserInputType.Keyboard then
-                    listening = false
-                    current = i.KeyCode
-                    chip.Text = i.KeyCode.Name
-                    Tween(chip, { BackgroundTransparency = 0.25 }, EASE.Snap)
-                    if flag then NelyX.Flags[flag] = i.KeyCode end
-                    if cfg.OnChanged then task.spawn(cfg.OnChanged, i.KeyCode) end
-                end
-            end)
-
-            local api = { Instance = row }
-            function api:Set(k)
-                if typeof(k) == "EnumItem" then
-                    current = k
-                    chip.Text = k.Name
-                    if flag then NelyX.Flags[flag] = k end
-                    if cfg.OnChanged then task.spawn(cfg.OnChanged, k) end
-                end
-            end
-            return Window:RegisterElement(flag, api)
-        end
-
-        function Tab:CreateColorpicker(cfg, flag)
-            cfg = cfg or {}
-            local colour = cfg.CurrentValue or hue
-            local row = Row(cfg.Description and ROW_D or ROW)
-            RowText(row, cfg.Name or "Colour", cfg.Description, cfg.Icon or "palette")
-
-            local swatch = New("TextButton", {
-                AnchorPoint = Vector2.new(1, 0.5),
-                Position = UDim2.new(1, -14, 0.5, 0),
-                Size = UDim2.fromOffset(38, 22),
-                BackgroundColor3 = colour, AutoButtonColor = false, Text = "",
-                BorderSizePixel = 0, ZIndex = 19, Parent = row,
-            }, { Corner(7), Stroke(Theme.Border, 1, 0.4) })
-
-            -- A full HSV wheel is overkill in a hub; a hue strip covers
-            -- every practical ESP/crosshair choice and stays usable on a
-            -- phone screen.
-            local strip = New("Frame", {
-                Position = UDim2.new(0, 14, 0, ROW - 4),
-                Size = UDim2.new(1, -28, 0, 0),
-                BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                BorderSizePixel = 0, ClipsDescendants = true,
-                ZIndex = 19, Parent = row,
-            }, {
-                Corner(6),
-                Gradient(ColorSequence.new({
-                    ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 0, 0)),
-                    ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 255, 0)),
-                    ColorSequenceKeypoint.new(0.34, Color3.fromRGB(0, 255, 0)),
-                    ColorSequenceKeypoint.new(0.51, Color3.fromRGB(0, 255, 255)),
-                    ColorSequenceKeypoint.new(0.68, Color3.fromRGB(0, 0, 255)),
-                    ColorSequenceKeypoint.new(0.85, Color3.fromRGB(255, 0, 255)),
-                    ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 0, 0)),
-                })),
-            })
-
-            local api = { Instance = row }
-            function api:Set(c, silent)
-                if typeof(c) ~= "Color3" then return end
-                colour = c
-                swatch.BackgroundColor3 = c
-                if flag then NelyX.Flags[flag] = c end
-                if cfg.Callback and not silent then task.spawn(cfg.Callback, c) end
+                function api:Set(list) api:Render(list or {}) end
+                api:Render(gridCfg.Items or {})
+                return api
             end
 
-            local open = false
-            swatch.MouseButton1Click:Connect(function()
-                open = not open
-                Tween(row, { Size = UDim2.new(1, 0, 0, open and (ROW + 34) or ROW) }, EASE.Glide)
-                Tween(strip, { Size = UDim2.new(1, -28, 0, open and 20 or 0) }, EASE.Glide)
-            end)
-            local picking = false
-            local function pick(px)
-                local a = math.clamp((px - strip.AbsolutePosition.X) / math.max(strip.AbsoluteSize.X, 1), 0, 1)
-                api:Set(Color3.fromHSV(a, 0.75, 1))
-            end
-            strip.InputBegan:Connect(function(i)
-                if i.UserInputType == Enum.UserInputType.MouseButton1
-                   or i.UserInputType == Enum.UserInputType.Touch then
-                    picking = true pick(i.Position.X)
-                end
-            end)
-            UserInputService.InputChanged:Connect(function(i)
-                if picking and (i.UserInputType == Enum.UserInputType.MouseMovement
-                   or i.UserInputType == Enum.UserInputType.Touch) then pick(i.Position.X) end
-            end)
-            UserInputService.InputEnded:Connect(function(i)
-                if i.UserInputType == Enum.UserInputType.MouseButton1
-                   or i.UserInputType == Enum.UserInputType.Touch then picking = false end
-            end)
-
-            if flag then NelyX.Flags[flag] = colour end
-            return Window:RegisterElement(flag, api)
+            return G
         end
 
         ----------------------------------------------------------------
-        -- ITEM GRID
-        --
-        -- Cards of real artwork. Picking a weapon skin by name means
-        -- knowing 170 names; picking it by its picture means looking at
-        -- it. Items are { Id, Name, Image, Badge, BadgeRainbow }.
+        -- v3 compatibility: a section starts a new card, and controls
+        -- created straight on the tab go into the current card.
         ----------------------------------------------------------------
-        function Tab:CreateItemGrid(cfg)
-            cfg = cfg or {}
-            local items   = cfg.Items or {}
-            local cardW   = cfg.CardWidth or 96
-            local cardH   = cfg.CardHeight or 112
+        function Tab:CreateSection(title)
+            return Tab:CreateGroup({ Title = title })
+        end
 
-            local shellFrame = New("Frame", {
-                Size = UDim2.new(1, 0, 0, 0),
-                AutomaticSize = Enum.AutomaticSize.Y,
-                BackgroundTransparency = 1, ZIndex = 16, Parent = page,
-            }, { List(8) })
+        local function ensure()
+            if not currentGroup then currentGroup = Tab:CreateGroup({}) end
+            return currentGroup
+        end
 
-            local countLabel = New("TextLabel", {
-                Size = UDim2.new(1, 0, 0, 16),
-                BackgroundTransparency = 1,
-                Text = "", TextColor3 = Theme.TextDim, TextSize = 11,
-                Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
-                LayoutOrder = 1, ZIndex = 17, Parent = shellFrame,
-            })
-
-            local grid = New("Frame", {
-                Size = UDim2.new(1, 0, 0, 0),
-                AutomaticSize = Enum.AutomaticSize.Y,
-                BackgroundTransparency = 1, LayoutOrder = 2,
-                ZIndex = 17, Parent = shellFrame,
-            }, {
-                New("UIGridLayout", {
-                    CellSize = UDim2.fromOffset(cardW, cardH),
-                    CellPadding = UDim2.fromOffset(8, 8),
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                }),
-            })
-
-            local api = { Instance = shellFrame }
-
-            local function card(item, order)
-                local c = New("TextButton", {
-                    BackgroundColor3 = Theme.Surface, BackgroundTransparency = 0.25,
-                    AutoButtonColor = false, Text = "", LayoutOrder = order,
-                    ClipsDescendants = true, ZIndex = 18, Parent = grid,
-                }, { Corner(10), Stroke(Theme.BorderSoft, 1, 0.45) })
-
-                New("ImageLabel", {
-                    Name = "Art",
-                    Position = UDim2.fromOffset(0, 6),
-                    Size = UDim2.new(1, 0, 1, -30),
-                    BackgroundTransparency = 1,
-                    Image = tostring(item.Image or ""),
-                    ScaleType = Enum.ScaleType.Fit,
-                    ZIndex = 19, Parent = c,
-                })
-
-                New("TextLabel", {
-                    AnchorPoint = Vector2.new(0, 1),
-                    Position = UDim2.new(0, 0, 1, -5),
-                    Size = UDim2.new(1, -8, 0, 14),
-                    BackgroundTransparency = 1,
-                    Text = tostring(item.Name or "?"),
-                    TextColor3 = Theme.TextSub, TextSize = 10.5,
-                    Font = Enum.Font.GothamMedium,
-                    TextTruncate = Enum.TextTruncate.AtEnd,
-                    ZIndex = 19, Parent = c,
-                }, { Pad(0, 0, 6, 0) })
-
-                if item.Badge and item.Badge ~= "" then
-                    local badge = New("Frame", {
-                        Position = UDim2.fromOffset(5, 5),
-                        Size = UDim2.fromOffset(0, 14),
-                        AutomaticSize = Enum.AutomaticSize.X,
-                        BackgroundColor3 = item.BadgeRainbow and Color3.fromRGB(255, 255, 255)
-                                            or (item.BadgeColor or hue),
-                        BorderSizePixel = 0, ZIndex = 21, Parent = c,
-                    }, { Corner(4), Pad(0, 0, 5, 5) })
-                    if item.BadgeRainbow then
-                        -- chromas advertise themselves in chroma
-                        Gradient(ColorSequence.new({
-                            ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 90, 90)),
-                            ColorSequenceKeypoint.new(0.33, Color3.fromRGB(255, 230, 120)),
-                            ColorSequenceKeypoint.new(0.66, Color3.fromRGB(120, 240, 190)),
-                            ColorSequenceKeypoint.new(1.00, Color3.fromRGB(170, 140, 255)),
-                        })).Parent = badge
-                    end
-                    New("TextLabel", {
-                        Size = UDim2.fromOffset(0, 14), AutomaticSize = Enum.AutomaticSize.X,
-                        BackgroundTransparency = 1,
-                        Text = string.upper(tostring(item.Badge)),
-                        TextColor3 = Color3.fromRGB(22, 22, 30),
-                        TextSize = 8.5, Font = Enum.Font.GothamBold,
-                        ZIndex = 22, Parent = badge,
-                    })
-                end
-
-                c.MouseEnter:Connect(function()
-                    Tween(c, { BackgroundTransparency = 0.05 }, EASE.Snap)
-                    local st = c:FindFirstChildOfClass("UIStroke")
-                    if st then Tween(st, { Color = hue, Transparency = 0 }, EASE.Snap) end
-                end)
-                c.MouseLeave:Connect(function()
-                    Tween(c, { BackgroundTransparency = 0.25 }, EASE.Snap)
-                    local st = c:FindFirstChildOfClass("UIStroke")
-                    if st then Tween(st, { Color = Theme.BorderSoft, Transparency = 0.45 }, EASE.Snap) end
-                end)
-                c.MouseButton1Click:Connect(function()
-                    Ripple(c)
-                    if cfg.Callback then task.spawn(cfg.Callback, item.Id or item.Name, item) end
-                end)
-                return c
-            end
-
-            -- Rendering 900 cards at once locks the client, so the grid
-            -- draws a page at a time and yields between batches.
-            local BATCH, cap = 40, cfg.MaxCards or 300
-            function api:Render(list)
-                for _, c in ipairs(grid:GetChildren()) do
-                    if c:IsA("TextButton") then c:Destroy() end
-                end
-                local shown = math.min(#list, cap)
-                countLabel.Text = #list .. " items"
-                    .. (#list > cap and ("  (showing first " .. cap .. " -- narrow the filter)") or "")
-                task.spawn(function()
-                    for i = 1, shown do
-                        card(list[i], i)
-                        if i % BATCH == 0 then task.wait() end
-                    end
-                end)
-            end
-
-            function api:Set(list)
-                items = list or {}
-                api:Render(items)
-            end
-
-            api:Render(items)
-            return api
+        for _, fn in ipairs({ "CreateToggle", "CreateSlider", "CreateDropdown", "CreateInput",
+                              "CreateKeybind", "CreateColorpicker", "CreateButton",
+                              "CreateParagraph", "CreateDivider", "CreateLabel",
+                              "CreateItemGrid" }) do
+            Tab[fn] = function(_, a, b) return ensure()[fn](ensure(), a, b) end
         end
 
         return Tab
     end
 
-    -- sidebar search filters the tab list
-    if searchBox then
-        searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-            local q = string.lower(searchBox.Text)
-            for _, tab in ipairs(Window.Tabs) do
-                tab.Button.Visible = q == "" or string.find(string.lower(tab.Name), q, 1, true) ~= nil
-            end
-        end)
-    end
+    -- search filters rail buttons by tab name
+    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        local q = string.lower(searchBox.Text)
+        for _, tab in ipairs(W.Tabs) do
+            tab.Button.Visible = q == "" or string.find(string.lower(tab.Name), q, 1, true) ~= nil
+        end
+    end)
 
-    table.insert(NelyX.Windows, Window)
-    return Window
+    table.insert(Nely.Windows, W)
+    return W
 end
 
-return NelyX
+return Nely
