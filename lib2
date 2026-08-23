@@ -496,7 +496,7 @@ Nely.Design = {
     },
 
     Transparency = {
-        Shell = 0.06, Sidebar = 0.35, Surface = 0.28,
+        Shell = 0.18, Sidebar = 0.42, Surface = 0.10,
         Elevated = 0.18, Wash = 0.93,
     },
 
@@ -2687,7 +2687,7 @@ function Nely:CreateWindow(opts)
     --
     -- Glass = 0 gives the old opaque look; the default leans translucent.
     local glass = opts.Glass
-    if glass == nil then glass = 0.10 end
+    if glass == nil then glass = 0.18 end
     if opts.Transparent == false then glass = 0 end
 
     local shell = New("Frame", {
@@ -2736,7 +2736,7 @@ function Nely:CreateWindow(opts)
         Name                   = "Depth",
         Size                   = UDim2.fromScale(1, 1),
         BackgroundColor3       = Color3.fromRGB(0, 0, 0),
-        BackgroundTransparency = 0.88,
+        BackgroundTransparency = 0.90,
         BorderSizePixel        = 0,
         ZIndex                 = 10,
         Parent                 = shell,
@@ -2746,8 +2746,8 @@ function Nely:CreateWindow(opts)
             Rotation = 90,
             Transparency = NumberSequence.new({
                 NumberSequenceKeypoint.new(0, 1),
-                NumberSequenceKeypoint.new(0.6, 0.92),
-                NumberSequenceKeypoint.new(1, 0.72),
+                NumberSequenceKeypoint.new(0.6, 0.96),
+                NumberSequenceKeypoint.new(1, 0.86),
             }),
         }),
     })
@@ -2929,9 +2929,9 @@ function Nely:CreateWindow(opts)
         return titleX + math.max(titleW, subW)
     end
 
-    -- Opt-in from v4. It was on by default and it is the single biggest
-    -- consumer of header width; a hub that wants it asks for it.
-    if opts.ShowGame == true then
+    -- On by default, as it always was. It is how you tell at a glance
+    -- which place the script is attached to. ShowGame = false removes it.
+    if opts.ShowGame ~= false then
         local divider
         if badgeOnLeft then
             divider = New("Frame", {
@@ -3225,7 +3225,7 @@ function Nely:CreateWindow(opts)
         Size                   = UDim2.new(0, sidebarW, 1, -topbarH),
         Position               = UDim2.fromOffset(0, topbarH),
         BackgroundColor3       = theme.Sidebar,
-        BackgroundTransparency = 0.35,
+        BackgroundTransparency = 0.42,
         ZIndex                 = 15,
         Parent                 = shell,
     })
@@ -3964,7 +3964,10 @@ function Nely:CreateWindow(opts)
         if animate == false then
             shellScale.Scale = 1
             shell.Position   = homePosition
-            shell.BackgroundTransparency = opts.Transparent == false and 0 or 0.04
+            -- `glass` is the configured value; 0.04 here was a hardcoded
+            -- leftover that silently overrode it on every open, which is
+            -- why the window rendered nearly solid however Glass was set.
+            shell.BackgroundTransparency = glass
             return
         end
 
@@ -3989,7 +3992,10 @@ function Nely:CreateWindow(opts)
             shell.Position   = homePosition
         end
 
-        shell.BackgroundTransparency = opts.Transparent == false and 0 or 0.04
+        -- `glass` is the configured value; 0.04 here was a hardcoded
+            -- leftover that silently overrode it on every open, which is
+            -- why the window rendered nearly solid however Glass was set.
+            shell.BackgroundTransparency = glass
         Tween(shell, { Position = homePosition }, EASE.Fly)
         Tween(shellScale, { Scale = 1 }, EASE.Spring)
     end
@@ -4061,10 +4067,29 @@ function Nely:CreateWindow(opts)
         UserInputService.MouseIconEnabled = true
 
         Tween(Blur, { Size = 0 }, EASE.Smooth)
-        -- Back/In: a small swell, then away. Fading the backdrop at the
-        -- same time stops the last few frames looking like a hard cut.
-        Tween(shellScale, { Scale = 0 }, EASE.Collapse)
-        Tween(shell, { BackgroundTransparency = 1 }, EASE.Smooth)
+
+        -- 1. Empty the window. Content leaves before the frame does, so
+        --    the close reads as the interface standing down rather than
+        --    the whole thing being deleted mid-frame.
+        if Window.ActiveTab and Window.ActiveTab._wrap
+           and Window.ActiveTab._wrap:IsA("CanvasGroup") then
+            Tween(Window.ActiveTab._wrap, { GroupTransparency = 1 }, EASE.Instant)
+        end
+        Tween(sidebar, { Position = UDim2.fromOffset(-sidebarW, topbarH) }, EASE.Snap)
+        for _, child in ipairs(topbar:GetDescendants()) do
+            if child:IsA("TextLabel") then
+                Tween(child, { TextTransparency = 1 }, EASE.Instant)
+            elseif child:IsA("ImageLabel") then
+                Tween(child, { ImageTransparency = 1 }, EASE.Instant)
+            end
+        end
+
+        -- 2. Then the frame settles down and away. A slight swell first
+        --    (Collapse eases Back/In) so it has weight on the way out.
+        task.delay(0.1, function()
+            Tween(shellScale, { Scale = 0.92 }, EASE.Smooth)
+            Tween(shell, { BackgroundTransparency = 1 }, EASE.Smooth)
+        end)
         Tween(orbScale, { Scale = 0 }, EASE.Collapse)
 
         -- Bump the generation first. Anything already queued with
@@ -4563,6 +4588,7 @@ function Nely:CreateWindow(opts)
         ApplyColumns()
         Window:OnResize(function() ApplyColumns() end)
 
+        local pageScale
         Tab.Page   = page       -- kept: hubs reference this
         Tab._wrap  = pageWrap
         Tab.Button = btn
@@ -4583,9 +4609,12 @@ function Nely:CreateWindow(opts)
 
             if previous and previous._wrap then
                 local old = previous._wrap
-                Tween(old, { Position = UDim2.fromOffset(-10, 0) }, EASE.Page)
+                -- Out fast: 0.12s, and only 8px. The page you just left
+                -- should not linger long enough to compete with the one
+                -- you asked for.
+                Tween(old, { Position = UDim2.fromOffset(-8, 0) }, EASE.Instant)
                 if old:IsA("CanvasGroup") then
-                    Tween(old, { GroupTransparency = 1 }, EASE.Page)
+                    Tween(old, { GroupTransparency = 1 }, EASE.Snap)
                 end
                 task.delay(0.2, function()
                     if Window.Destroyed then return end
@@ -4622,12 +4651,24 @@ function Nely:CreateWindow(opts)
                 end
             end
 
+            -- In slower and further, with a touch of scale so the page
+            -- arrives rather than simply appearing.
+            -- Always open at the top. A grid that renders in batches
+            -- grows the canvas under a preserved scroll offset, which is
+            -- why the crosshair page opened 200px down.
+            page.CanvasPosition = Vector2.zero
+
             pageWrap.Visible  = true
-            pageWrap.Position = UDim2.fromOffset(10, 0)
+            pageWrap.Position = UDim2.fromOffset(14, 0)
             if pageWrap:IsA("CanvasGroup") then pageWrap.GroupTransparency = 1 end
-            Tween(pageWrap, { Position = UDim2.fromOffset(0, 0) }, EASE.Page)
+            if not pageScale then
+                pageScale = New("UIScale", { Scale = 1, Parent = pageWrap })
+            end
+            pageScale.Scale = 0.985
+            Tween(pageWrap,  { Position = UDim2.fromOffset(0, 0) }, EASE.Smooth)
+            Tween(pageScale, { Scale = 1 }, EASE.Smooth)
             if pageWrap:IsA("CanvasGroup") then
-                Tween(pageWrap, { GroupTransparency = 0 }, EASE.Page)
+                Tween(pageWrap, { GroupTransparency = 0 }, EASE.Smooth)
             end
 
         end
@@ -4852,7 +4893,7 @@ function Nely:CreateWindow(opts)
                 AutomaticSize          = Enum.AutomaticSize.Y,
                 Themed                 = { BackgroundColor3 = "Card" },
                 BackgroundColor3       = theme.Card,
-                BackgroundTransparency = 0.18,
+                BackgroundTransparency = 0.10,
                 BorderSizePixel        = 0,
                 LayoutOrder            = NextOrder(),
                 ZIndex                 = 17,
@@ -6782,7 +6823,6 @@ function Nely:CreateWindow(opts)
         local CURVE_SEGMENTS = 34
 
         function Tab:CreateCurve(cfg, flag)
-            CloseSection()   -- a block sits between cards, not inside one
             cfg = cfg or {}
             local p1x = math.clamp(cfg.P1X or 0.25, 0, 1)
             local p1y = math.clamp(cfg.P1Y or 0.10, -0.5, 1.5)
@@ -6799,7 +6839,7 @@ function Nely:CreateWindow(opts)
                 LayoutOrder            = NextOrder(),
                 ClipsDescendants       = true,
                 ZIndex                 = 17,
-                Parent                 = ElementHost(),
+                Parent                 = RowSlot(),
             }, { Corner(11), Stroke(theme.BorderSoft, 1, 0.45) })
 
             local lp = RowIcon(row, cfg.Icon)
@@ -7057,7 +7097,6 @@ function Nely:CreateWindow(opts)
         ------------------------------------------------------------
 
         function Tab:CreateCode(cfg)
-            CloseSection()   -- a block sits between cards, not inside one
             cfg = type(cfg) == "string" and { Code = cfg } or (cfg or {})
             local body = cfg.Code or ""
 
@@ -7068,7 +7107,7 @@ function Nely:CreateWindow(opts)
                 BorderSizePixel        = 0,
                 LayoutOrder            = NextOrder(),
                 ZIndex                 = 17,
-                Parent                 = ElementHost(),
+                Parent                 = RowSlot(),
             }, { Corner(11), Stroke(theme.BorderSoft, 1, 0.35), Pad(10, 10, 12, 12), List(7) })
 
             if cfg.Title then
@@ -7161,7 +7200,6 @@ function Nely:CreateWindow(opts)
         --   Items = { { Id, Name, Image, Badge, BadgeRainbow, Subtitle } }
         ------------------------------------------------------------
         function Tab:CreateItemGrid(cfg)
-            CloseSection()   -- a block sits between cards, not inside one
             cfg = cfg or {}
             local cell   = cfg.CellSize or Vector2.new(104, 122)
             local cap    = cfg.MaxCards or 300
@@ -7173,7 +7211,7 @@ function Nely:CreateWindow(opts)
                 BackgroundTransparency = 1,
                 LayoutOrder            = NextOrder(),
                 ZIndex                 = 17,
-                Parent                 = ElementHost(),
+                Parent                 = RowSlot(),
             }, { List(8) })
 
             local status = New("TextLabel", {
@@ -7247,31 +7285,46 @@ function Nely:CreateWindow(opts)
                 })
 
                 if item.Image and item.Image ~= "" then
+                    -- ImageTransparency stays at 0 for the lifetime of this
+                    -- label, and that is not a style choice.
+                    --
+                    -- Roblox will not download a fully transparent image.
+                    -- The old code created the label at transparency 1 and
+                    -- had the fallback set it back to 1 on failure, which
+                    -- meant the "it failed" branch guaranteed it could
+                    -- never succeed: twenty of twenty-five crosshairs sat
+                    -- as dead letters forever, even after scrolling to them.
+                    --
+                    -- So only the LETTER is toggled. An undecoded image
+                    -- draws nothing, so showing both is safe, and the
+                    -- letter simply disappears once the artwork arrives.
                     local pic = New("ImageLabel", {
                         Size                   = UDim2.fromScale(1, 1),
                         BackgroundTransparency = 1,
                         Image                  = tostring(item.Image),
-                        ImageTransparency      = 1,
+                        ImageTransparency      = 0,
                         ScaleType              = Enum.ScaleType.Fit,
                         ZIndex                 = 22,
                         Parent                 = art,
                     })
-                    -- Hide the initial straight away and fade the picture
-                    -- in. Waiting on IsLoaded first was the obvious order
-                    -- and it was wrong: the artwork is scaled to Fit, so
-                    -- the letter kept showing through the empty margins
-                    -- around a loaded image, and IsLoaded proved
-                    -- unreliable for rbxthumb assets anyway.
-                    --
-                    -- The letter only comes back if the asset genuinely
-                    -- never decodes, which is the case it exists for.
+
+                    -- Hidden for the first beat so a fast asset never
+                    -- flashes a placeholder, then shown while we wait.
                     letter.TextTransparency = 1
-                    Tween(pic, { ImageTransparency = 0 }, EASE.Smooth)
                     task.spawn(function()
-                        task.wait(6)
-                        if pic.Parent and not pic.IsLoaded then
-                            Tween(pic, { ImageTransparency = 1 }, EASE.Smooth)
-                            Tween(letter, { TextTransparency = 0.35 }, EASE.Smooth)
+                        local waited = 0
+                        while pic.Parent do
+                            if pic.IsLoaded then
+                                if letter.TextTransparency < 1 then
+                                    Tween(letter, { TextTransparency = 1 }, EASE.Smooth)
+                                end
+                                return
+                            end
+                            waited = waited + 0.25
+                            if waited > 0.6 and letter.TextTransparency > 0.9 then
+                                Tween(letter, { TextTransparency = 0.4 }, EASE.Smooth)
+                            end
+                            task.wait(0.25)
                         end
                     end)
                 end
