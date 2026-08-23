@@ -128,6 +128,28 @@ Nely.Themes = {
         Danger      = Color3.fromRGB(240, 100, 100),
         Warning     = Color3.fromRGB(232, 180, 80),
     },
+    -- Nely Metallic. The branded default: charcoal ground, platinum accent,
+    -- soft white text, quiet borders.
+    Metallic = {
+        Backdrop    = Color3.fromRGB( 12,  12,  14),
+        Surface     = Color3.fromRGB( 18,  19,  22),
+        SurfaceAlt  = Color3.fromRGB( 25,  26,  30),
+        Elevated    = Color3.fromRGB( 34,  35,  40),
+        Hover       = Color3.fromRGB( 45,  46,  53),
+        Border      = Color3.fromRGB( 58,  60,  68),
+        BorderSoft  = Color3.fromRGB( 32,  33,  38),
+        -- Cool platinum, one step off white so it reads as metal.
+        Accent      = Color3.fromRGB(205, 210, 222),
+        AccentSoft  = Color3.fromRGB(238, 241, 248),
+        AccentDeep  = Color3.fromRGB(128, 133, 146),
+        -- Soft white, not pure: 255 on charcoal glares.
+        Text        = Color3.fromRGB(238, 240, 245),
+        TextSub     = Color3.fromRGB(158, 163, 175),
+        TextDim     = Color3.fromRGB(104, 109, 120),
+        Success     = Color3.fromRGB( 92, 198, 136),
+        Danger      = Color3.fromRGB(232, 104, 108),
+        Warning     = Color3.fromRGB(228, 178,  92),
+    },
     -- Kept from the previous build so existing scripts that name a theme
     -- explicitly still resolve instead of silently falling back.
     Nord = {
@@ -207,7 +229,7 @@ do
         Silver  = { Color3.fromRGB(198, 202, 210), Color3.fromRGB(233, 236, 242), Color3.fromRGB(134, 139, 150) },
         -- Darkest of the set. Almost no accent at all: the UI recedes and
         -- the logo is the only bright thing on screen.
-        Onyx    = { Color3.fromRGB(126, 130, 138), Color3.fromRGB(168, 172, 182), Color3.fromRGB( 84,  87,  94) },
+        Obsidian = { Color3.fromRGB(126, 130, 138), Color3.fromRGB(168, 172, 182), Color3.fromRGB( 84,  87,  94) },
         Crimson = { Color3.fromRGB(226,  74,  74), Color3.fromRGB(244, 126, 126), Color3.fromRGB(166,  38,  38) },
         Violet  = { Color3.fromRGB(150, 118, 245), Color3.fromRGB(186, 164, 252), Color3.fromRGB(103,  74, 194) },
         Rose    = { Color3.fromRGB(238, 118, 168), Color3.fromRGB(248, 162, 197), Color3.fromRGB(190,  70, 122) },
@@ -224,13 +246,14 @@ do
         Nely.Themes[name] = theme
     end
 
-    -- Onyx leans darker still. Overriding after the loop keeps the table
+    -- Obsidian leans darker still. Overriding after the loop keeps the table
     -- above readable as pure accent data.
-    Nely.Themes.Onyx.Backdrop = Color3.fromRGB(10, 10, 11)
-    Nely.Themes.Onyx.Surface  = Color3.fromRGB(16, 16, 18)
+    Nely.Themes.Obsidian.Backdrop = Color3.fromRGB(10, 10, 11)
+    Nely.Themes.Obsidian.Surface  = Color3.fromRGB(16, 16, 18)
 end
 
-Nely.Theme = Nely.Themes.Cobalt
+Nely.Theme     = Nely.Themes.Metallic
+Nely.ThemeName = "Metallic"
 
 --------------------------------------------------------------------
 --  CUSTOM THEMES
@@ -240,6 +263,76 @@ Nely.Theme = Nely.Themes.Cobalt
 --  to change the accent colour.
 --------------------------------------------------------------------
 
+-- Names people reach for. Aliases rather than copies, so a theme edited
+-- at runtime stays consistent under every name it answers to.
+Nely.ThemeAliases = {
+    ["Onyx"]          = "Obsidian",   -- former name, kept for saved configs
+    ["Nely Metallic"] = "Metallic",
+    ["Nely"]          = "Metallic",
+    ["Platinum"]      = "Metallic",
+    ["Default"]       = "Metallic",
+    ["Gray"]          = "Graphite",
+    ["Grey"]          = "Graphite",
+}
+
+-- A theme keeps its true accent triple in the *True slots and exposes
+-- whatever Colored UI says the live triple should be. Controls read the
+-- live slots, so this one assignment is what carries the switch to all of
+-- them -- there is no per-control opt-in to forget.
+local function ApplyAccentMask(t)
+    if type(t) ~= "table" then return t end
+    if t.AccentTrue == nil then
+        t.AccentTrue     = t.Accent
+        t.AccentSoftTrue = t.AccentSoft
+        t.AccentDeepTrue = t.AccentDeep
+    end
+    local m = Nely.Themes and Nely.Themes.Metallic
+    if Nely.ColoredUI or not m then
+        t.Accent     = t.AccentTrue
+        t.AccentSoft = t.AccentSoftTrue
+        t.AccentDeep = t.AccentDeepTrue
+    else
+        -- Read the metallic theme's *own* true accents: it is masked too,
+        -- and reading its live slots would be circular the moment someone
+        -- edits it at runtime.
+        t.Accent     = m.AccentTrue     or m.Accent
+        t.AccentSoft = m.AccentSoftTrue or m.AccentSoft
+        t.AccentDeep = m.AccentDeepTrue or m.AccentDeep
+    end
+    return t
+end
+Nely.ApplyAccentMask = ApplyAccentMask
+
+-- Resolve by name, honouring aliases and ignoring case. Returns the theme
+-- and its canonical name, because the settings UI needs to highlight the
+-- entry that actually exists in Nely.Themes.
+local function FindTheme(name)
+    if type(name) == "table" then return name, nil end
+    if type(name) ~= "string" then return nil, nil end
+    if Nely.Themes[name] then return Nely.Themes[name], name end
+    local alias = Nely.ThemeAliases[name]
+    if alias and Nely.Themes[alias] then return Nely.Themes[alias], alias end
+    local lower = string.lower(name)
+    for key, theme in pairs(Nely.Themes) do
+        if string.lower(key) == lower then return theme, key end
+    end
+    for key, target in pairs(Nely.ThemeAliases) do
+        if string.lower(key) == lower and Nely.Themes[target] then
+            return Nely.Themes[target], target
+        end
+    end
+    return nil, nil
+end
+
+-- Every route to a theme goes through here, so masking at this one point
+-- covers window creation, SetTheme and any hub that resolves a theme
+-- itself.
+function Nely.ResolveTheme(name)
+    local theme, canonical = FindTheme(name)
+    return ApplyAccentMask(theme), canonical
+end
+local ResolveTheme = Nely.ResolveTheme
+
 function Nely:AddTheme(spec)
     assert(type(spec) == "table" and spec.Name, "AddTheme needs a table with a Name")
 
@@ -248,11 +341,24 @@ function Nely:AddTheme(spec)
     for slot, color in pairs(base) do
         theme[slot] = color
     end
+
+    -- Inherit the base's TRUE accents rather than whatever the Colored UI
+    -- mask currently has it showing. A theme derived while the mask is off
+    -- would otherwise inherit platinum and lose its parent's colour for
+    -- good, since the mask only captures the true triple once.
+    theme.Accent     = base.AccentTrue     or base.Accent
+    theme.AccentSoft = base.AccentSoftTrue or base.AccentSoft
+    theme.AccentDeep = base.AccentDeepTrue or base.AccentDeep
+
     for slot, color in pairs(spec) do
         if slot ~= "Name" and slot ~= "Base" and typeof(color) == "Color3" then
             theme[slot] = color
         end
     end
+
+    -- Cleared so the mask re-captures from the finished palette instead of
+    -- reusing the base's.
+    theme.AccentTrue, theme.AccentSoftTrue, theme.AccentDeepTrue = nil, nil, nil
 
     Nely.Themes[spec.Name] = theme
     return theme
@@ -268,8 +374,402 @@ function Nely:GetThemes()
 end
 
 --==================================================================
+--  LOCALIZATION
+--
+--  Library-owned text only. A hub's own tab names, control labels and
+--  descriptions are never touched -- translating someone's product
+--  wording behind their back is worse than leaving it in English. A hub
+--  that DOES want a string translated registers it (Nely:AddStrings) and
+--  passes the key.
+--
+--  Labels are BOUND rather than assigned, so SetLanguage repaints the
+--  open interface in place with no rebuild.
+--==================================================================
+
+local STRINGS = {
+    en = {
+        ["settings.colored"] = "Colored UI",
+        ["settings.desc.colored"] = "Tab icons and enabled toggles use the theme accent instead of platinum",
+        ["common.search"]           = "Search",
+        ["common.close"]            = "Close",
+        ["common.cancel"]           = "Cancel",
+        ["common.confirm"]          = "Confirm",
+        ["common.copy"]             = "Copy",
+        ["common.copied"]           = "Copied",
+        ["common.none"]             = "None",
+        ["common.reset"]            = "Reset",
+        ["common.on"]               = "On",
+        ["common.off"]              = "Off",
+        ["common.no_results"]       = "No results",
+        ["common.loading"]          = "Loading",
+        ["search.functions"]        = "Search functions",
+        ["search.games"]            = "Search games",
+        ["search.jump"]             = "Jump to anything\u{2026}",
+        ["loading.starting"]        = "Starting up",
+        ["loading.icons"]           = "Loading icons",
+        ["loading.icons_ready"]     = "Icons ready",
+        ["loading.building"]        = "Building interface",
+        ["loading.almost"]          = "Almost there",
+        ["loading.ready"]           = "Ready",
+        ["settings.title"]          = "Settings",
+        ["settings.appearance"]     = "Appearance",
+        ["settings.theme"]          = "Theme",
+        ["settings.language"]       = "Language",
+        ["settings.transparency"]   = "Transparency",
+        ["settings.blur"]           = "Background blur",
+        ["settings.interface"]      = "Interface",
+        ["settings.cursor"]         = "Custom cursor",
+        ["settings.notifications"]  = "Notifications",
+        ["settings.configuration"]  = "Configuration",
+        ["settings.toggle_key"]     = "Toggle key",
+        ["settings.desc.theme"]     = "Colour palette used across the interface",
+        ["settings.desc.language"]  = "Interface language, not hub text",
+        ["settings.desc.blur"]      = "Softens the game behind the window",
+        ["settings.desc.cursor"]    = "Replaces the system pointer while open",
+        ["settings.desc.notifs"]    = "Show toast messages in the corner",
+        ["dialog.close_title"]      = "Close %s?",
+        ["dialog.close_body"]       = "This shuts the interface down completely. You'll need to run the script again to bring it back.",
+        ["keysystem.get_key"]       = "Get key",
+        ["keysystem.unlock"]        = "Unlock",
+        ["keysystem.placeholder"]   = "Paste your key",
+        ["keysystem.invalid"]       = "That key was not accepted",
+    },
+
+    fr = {
+        ["settings.colored"] = "Interface color\u{00E9}e",
+        ["settings.desc.colored"] = "Les ic\u{00F4}nes et les interrupteurs actifs utilisent la couleur du th\u{00E8}me",
+        ["common.search"]           = "Rechercher",
+        ["common.close"]            = "Fermer",
+        ["common.cancel"]           = "Annuler",
+        ["common.confirm"]          = "Confirmer",
+        ["common.copy"]             = "Copier",
+        ["common.copied"]           = "Copi\u{00E9}",
+        ["common.none"]             = "Aucun",
+        ["common.reset"]            = "R\u{00E9}initialiser",
+        ["common.on"]               = "Activ\u{00E9}",
+        ["common.off"]              = "D\u{00E9}sactiv\u{00E9}",
+        ["common.no_results"]       = "Aucun r\u{00E9}sultat",
+        ["common.loading"]          = "Chargement",
+        ["search.functions"]        = "Rechercher une fonction",
+        ["search.games"]            = "Rechercher un jeu",
+        ["search.jump"]             = "Aller n'importe o\u{00F9}\u{2026}",
+        ["loading.starting"]        = "D\u{00E9}marrage",
+        ["loading.icons"]           = "Chargement des ic\u{00F4}nes",
+        ["loading.icons_ready"]     = "Ic\u{00F4}nes pr\u{00EA}tes",
+        ["loading.building"]        = "Construction de l'interface",
+        ["loading.almost"]          = "Presque termin\u{00E9}",
+        ["loading.ready"]           = "Pr\u{00EA}t",
+        ["settings.title"]          = "Param\u{00E8}tres",
+        ["settings.appearance"]     = "Apparence",
+        ["settings.theme"]          = "Th\u{00E8}me",
+        ["settings.language"]       = "Langue",
+        ["settings.transparency"]   = "Transparence",
+        ["settings.blur"]           = "Flou d'arri\u{00E8}re-plan",
+        ["settings.interface"]      = "Interface",
+        ["settings.cursor"]         = "Curseur personnalis\u{00E9}",
+        ["settings.notifications"]  = "Notifications",
+        ["settings.configuration"]  = "Configuration",
+        ["settings.toggle_key"]     = "Touche d'ouverture",
+        ["settings.desc.theme"]     = "Palette de couleurs de l'interface",
+        ["settings.desc.language"]  = "Langue de l'interface, pas du texte du hub",
+        ["settings.desc.blur"]      = "Adoucit le jeu derri\u{00E8}re la fen\u{00EA}tre",
+        ["settings.desc.cursor"]    = "Remplace le pointeur syst\u{00E8}me \u{00E0} l'ouverture",
+        ["settings.desc.notifs"]    = "Afficher les messages dans le coin",
+        ["dialog.close_title"]      = "Fermer %s ?",
+        ["dialog.close_body"]       = "Cela ferme compl\u{00E8}tement l'interface. Vous devrez relancer le script pour la rouvrir.",
+        ["keysystem.get_key"]       = "Obtenir une cl\u{00E9}",
+        ["keysystem.unlock"]        = "D\u{00E9}verrouiller",
+        ["keysystem.placeholder"]   = "Collez votre cl\u{00E9}",
+        ["keysystem.invalid"]       = "Cl\u{00E9} refus\u{00E9}e",
+    },
+
+    es = {
+        ["settings.colored"] = "Interfaz de color",
+        ["settings.desc.colored"] = "Los iconos y los interruptores activos usan el color del tema",
+        ["common.search"]           = "Buscar",
+        ["common.close"]            = "Cerrar",
+        ["common.cancel"]           = "Cancelar",
+        ["common.confirm"]          = "Confirmar",
+        ["common.copy"]             = "Copiar",
+        ["common.copied"]           = "Copiado",
+        ["common.none"]             = "Ninguno",
+        ["common.reset"]            = "Restablecer",
+        ["common.on"]               = "Activado",
+        ["common.off"]              = "Desactivado",
+        ["common.no_results"]       = "Sin resultados",
+        ["common.loading"]          = "Cargando",
+        ["search.functions"]        = "Buscar funciones",
+        ["search.games"]            = "Buscar juegos",
+        ["search.jump"]             = "Ir a cualquier lugar\u{2026}",
+        ["loading.starting"]        = "Iniciando",
+        ["loading.icons"]           = "Cargando iconos",
+        ["loading.icons_ready"]     = "Iconos listos",
+        ["loading.building"]        = "Construyendo interfaz",
+        ["loading.almost"]          = "Casi listo",
+        ["loading.ready"]           = "Listo",
+        ["settings.title"]          = "Ajustes",
+        ["settings.appearance"]     = "Apariencia",
+        ["settings.theme"]          = "Tema",
+        ["settings.language"]       = "Idioma",
+        ["settings.transparency"]   = "Transparencia",
+        ["settings.blur"]           = "Desenfoque de fondo",
+        ["settings.interface"]      = "Interfaz",
+        ["settings.cursor"]         = "Cursor personalizado",
+        ["settings.notifications"]  = "Notificaciones",
+        ["settings.configuration"]  = "Configuraci\u{00F3}n",
+        ["settings.toggle_key"]     = "Tecla de apertura",
+        ["settings.desc.theme"]     = "Paleta de colores de la interfaz",
+        ["settings.desc.language"]  = "Idioma de la interfaz, no del texto del hub",
+        ["settings.desc.blur"]      = "Suaviza el juego detr\u{00E1}s de la ventana",
+        ["settings.desc.cursor"]    = "Reemplaza el puntero del sistema",
+        ["settings.desc.notifs"]    = "Mostrar mensajes en la esquina",
+        ["dialog.close_title"]      = "\u{00BF}Cerrar %s?",
+        ["dialog.close_body"]       = "Esto cierra la interfaz por completo. Tendr\u{00E1}s que ejecutar el script de nuevo.",
+        ["keysystem.get_key"]       = "Obtener clave",
+        ["keysystem.unlock"]        = "Desbloquear",
+        ["keysystem.placeholder"]   = "Pega tu clave",
+        ["keysystem.invalid"]       = "Clave no aceptada",
+    },
+
+    ru = {
+        ["settings.colored"] = "\u{0426}\u{0432}\u{0435}\u{0442}\u{043D}\u{043E}\u{0439} \u{0438}\u{043D}\u{0442}\u{0435}\u{0440}\u{0444}\u{0435}\u{0439}\u{0441}",
+        ["settings.desc.colored"] = "\u{0418}\u{043A}\u{043E}\u{043D}\u{043A}\u{0438} \u{0438} \u{0432}\u{043A}\u{043B}\u{044E}\u{0447}\u{0451}\u{043D}\u{043D}\u{044B}\u{0435} \u{043F}\u{0435}\u{0440}\u{0435}\u{043A}\u{043B}\u{044E}\u{0447}\u{0430}\u{0442}\u{0435}\u{043B}\u{0438} \u{0438}\u{0441}\u{043F}\u{043E}\u{043B}\u{044C}\u{0437}\u{0443}\u{044E}\u{0442} \u{0446}\u{0432}\u{0435}\u{0442} \u{0442}\u{0435}\u{043C}\u{044B}",
+        ["common.search"]           = "\u{041F}\u{043E}\u{0438}\u{0441}\u{043A}",
+        ["common.close"]            = "\u{0417}\u{0430}\u{043A}\u{0440}\u{044B}\u{0442}\u{044C}",
+        ["common.cancel"]           = "\u{041E}\u{0442}\u{043C}\u{0435}\u{043D}\u{0430}",
+        ["common.confirm"]          = "\u{041F}\u{043E}\u{0434}\u{0442}\u{0432}\u{0435}\u{0440}\u{0434}\u{0438}\u{0442}\u{044C}",
+        ["common.copy"]             = "\u{041A}\u{043E}\u{043F}\u{0438}\u{0440}\u{043E}\u{0432}\u{0430}\u{0442}\u{044C}",
+        ["common.copied"]           = "\u{0421}\u{043A}\u{043E}\u{043F}\u{0438}\u{0440}\u{043E}\u{0432}\u{0430}\u{043D}\u{043E}",
+        ["common.none"]             = "\u{041D}\u{0435}\u{0442}",
+        ["common.reset"]            = "\u{0421}\u{0431}\u{0440}\u{043E}\u{0441}",
+        ["common.on"]               = "\u{0412}\u{043A}\u{043B}",
+        ["common.off"]              = "\u{0412}\u{044B}\u{043A}\u{043B}",
+        ["common.no_results"]       = "\u{041D}\u{0438}\u{0447}\u{0435}\u{0433}\u{043E} \u{043D}\u{0435} \u{043D}\u{0430}\u{0439}\u{0434}\u{0435}\u{043D}\u{043E}",
+        ["common.loading"]          = "\u{0417}\u{0430}\u{0433}\u{0440}\u{0443}\u{0437}\u{043A}\u{0430}",
+        ["search.functions"]        = "\u{041F}\u{043E}\u{0438}\u{0441}\u{043A} \u{0444}\u{0443}\u{043D}\u{043A}\u{0446}\u{0438}\u{0439}",
+        ["search.games"]            = "\u{041F}\u{043E}\u{0438}\u{0441}\u{043A} \u{0438}\u{0433}\u{0440}",
+        ["search.jump"]             = "\u{041F}\u{0435}\u{0440}\u{0435}\u{0439}\u{0442}\u{0438} \u{043A}\u{0443}\u{0434}\u{0430}-\u{043B}\u{0438}\u{0431}\u{043E}\u{2026}",
+        ["loading.starting"]        = "\u{0417}\u{0430}\u{043F}\u{0443}\u{0441}\u{043A}",
+        ["loading.icons"]           = "\u{0417}\u{0430}\u{0433}\u{0440}\u{0443}\u{0437}\u{043A}\u{0430} \u{0438}\u{043A}\u{043E}\u{043D}\u{043E}\u{043A}",
+        ["loading.icons_ready"]     = "\u{0418}\u{043A}\u{043E}\u{043D}\u{043A}\u{0438} \u{0433}\u{043E}\u{0442}\u{043E}\u{0432}\u{044B}",
+        ["loading.building"]        = "\u{0421}\u{0431}\u{043E}\u{0440}\u{043A}\u{0430} \u{0438}\u{043D}\u{0442}\u{0435}\u{0440}\u{0444}\u{0435}\u{0439}\u{0441}\u{0430}",
+        ["loading.almost"]          = "\u{041F}\u{043E}\u{0447}\u{0442}\u{0438} \u{0433}\u{043E}\u{0442}\u{043E}\u{0432}\u{043E}",
+        ["loading.ready"]           = "\u{0413}\u{043E}\u{0442}\u{043E}\u{0432}\u{043E}",
+        ["settings.title"]          = "\u{041D}\u{0430}\u{0441}\u{0442}\u{0440}\u{043E}\u{0439}\u{043A}\u{0438}",
+        ["settings.appearance"]     = "\u{0412}\u{043D}\u{0435}\u{0448}\u{043D}\u{0438}\u{0439} \u{0432}\u{0438}\u{0434}",
+        ["settings.theme"]          = "\u{0422}\u{0435}\u{043C}\u{0430}",
+        ["settings.language"]       = "\u{042F}\u{0437}\u{044B}\u{043A}",
+        ["settings.transparency"]   = "\u{041F}\u{0440}\u{043E}\u{0437}\u{0440}\u{0430}\u{0447}\u{043D}\u{043E}\u{0441}\u{0442}\u{044C}",
+        ["settings.blur"]           = "\u{0420}\u{0430}\u{0437}\u{043C}\u{044B}\u{0442}\u{0438}\u{0435} \u{0444}\u{043E}\u{043D}\u{0430}",
+        ["settings.interface"]      = "\u{0418}\u{043D}\u{0442}\u{0435}\u{0440}\u{0444}\u{0435}\u{0439}\u{0441}",
+        ["settings.cursor"]         = "\u{0421}\u{0432}\u{043E}\u{0439} \u{043A}\u{0443}\u{0440}\u{0441}\u{043E}\u{0440}",
+        ["settings.notifications"]  = "\u{0423}\u{0432}\u{0435}\u{0434}\u{043E}\u{043C}\u{043B}\u{0435}\u{043D}\u{0438}\u{044F}",
+        ["settings.configuration"]  = "\u{041A}\u{043E}\u{043D}\u{0444}\u{0438}\u{0433}\u{0443}\u{0440}\u{0430}\u{0446}\u{0438}\u{044F}",
+        ["settings.toggle_key"]     = "\u{041A}\u{043B}\u{0430}\u{0432}\u{0438}\u{0448}\u{0430} \u{043E}\u{0442}\u{043A}\u{0440}\u{044B}\u{0442}\u{0438}\u{044F}",
+        ["settings.desc.theme"]     = "\u{0426}\u{0432}\u{0435}\u{0442}\u{043E}\u{0432}\u{0430}\u{044F} \u{043F}\u{0430}\u{043B}\u{0438}\u{0442}\u{0440}\u{0430} \u{0438}\u{043D}\u{0442}\u{0435}\u{0440}\u{0444}\u{0435}\u{0439}\u{0441}\u{0430}",
+        ["settings.desc.language"]  = "\u{042F}\u{0437}\u{044B}\u{043A} \u{0438}\u{043D}\u{0442}\u{0435}\u{0440}\u{0444}\u{0435}\u{0439}\u{0441}\u{0430}, \u{0430} \u{043D}\u{0435} \u{0442}\u{0435}\u{043A}\u{0441}\u{0442}\u{0430} \u{0445}\u{0430}\u{0431}\u{0430}",
+        ["settings.desc.blur"]      = "\u{0420}\u{0430}\u{0437}\u{043C}\u{044B}\u{0432}\u{0430}\u{0435}\u{0442} \u{0438}\u{0433}\u{0440}\u{0443} \u{0437}\u{0430} \u{043E}\u{043A}\u{043D}\u{043E}\u{043C}",
+        ["settings.desc.cursor"]    = "\u{0417}\u{0430}\u{043C}\u{0435}\u{043D}\u{044F}\u{0435}\u{0442} \u{0441}\u{0438}\u{0441}\u{0442}\u{0435}\u{043C}\u{043D}\u{044B}\u{0439} \u{043A}\u{0443}\u{0440}\u{0441}\u{043E}\u{0440}",
+        ["settings.desc.notifs"]    = "\u{041F}\u{043E}\u{043A}\u{0430}\u{0437}\u{044B}\u{0432}\u{0430}\u{0442}\u{044C} \u{0441}\u{043E}\u{043E}\u{0431}\u{0449}\u{0435}\u{043D}\u{0438}\u{044F} \u{0432} \u{0443}\u{0433}\u{043B}\u{0443}",
+        ["dialog.close_title"]      = "\u{0417}\u{0430}\u{043A}\u{0440}\u{044B}\u{0442}\u{044C} %s?",
+        ["dialog.close_body"]       = "\u{0418}\u{043D}\u{0442}\u{0435}\u{0440}\u{0444}\u{0435}\u{0439}\u{0441} \u{0431}\u{0443}\u{0434}\u{0435}\u{0442} \u{043F}\u{043E}\u{043B}\u{043D}\u{043E}\u{0441}\u{0442}\u{044C}\u{044E} \u{0437}\u{0430}\u{043A}\u{0440}\u{044B}\u{0442}. \u{041F}\u{0440}\u{0438}\u{0434}\u{0451}\u{0442}\u{0441}\u{044F} \u{0437}\u{0430}\u{043F}\u{0443}\u{0441}\u{0442}\u{0438}\u{0442}\u{044C} \u{0441}\u{043A}\u{0440}\u{0438}\u{043F}\u{0442} \u{0437}\u{0430}\u{043D}\u{043E}\u{0432}\u{043E}.",
+        ["keysystem.get_key"]       = "\u{041F}\u{043E}\u{043B}\u{0443}\u{0447}\u{0438}\u{0442}\u{044C} \u{043A}\u{043B}\u{044E}\u{0447}",
+        ["keysystem.unlock"]        = "\u{0420}\u{0430}\u{0437}\u{0431}\u{043B}\u{043E}\u{043A}\u{0438}\u{0440}\u{043E}\u{0432}\u{0430}\u{0442}\u{044C}",
+        ["keysystem.placeholder"]   = "\u{0412}\u{0441}\u{0442}\u{0430}\u{0432}\u{044C}\u{0442}\u{0435} \u{043A}\u{043B}\u{044E}\u{0447}",
+        ["keysystem.invalid"]       = "\u{041A}\u{043B}\u{044E}\u{0447} \u{043E}\u{0442}\u{043A}\u{043B}\u{043E}\u{043D}\u{0451}\u{043D}",
+    },
+}
+
+Nely.Languages = {
+    { Code = "en", Name = "English"  },
+    { Code = "fr", Name = "Fran\u{00E7}ais" },
+    { Code = "es", Name = "Espa\u{00F1}ol"  },
+    { Code = "ru", Name = "\u{0420}\u{0443}\u{0441}\u{0441}\u{043A}\u{0438}\u{0439}" },
+}
+Nely.Language = "en"
+
+-- English is the fallback for any key a translation is missing, so a
+-- half-finished language shows real words rather than "settings.theme".
+local function L(key, ...)
+    local pack = STRINGS[Nely.Language] or STRINGS.en
+    local text = pack[key] or STRINGS.en[key] or key
+    if select("#", ...) > 0 then
+        local ok, formatted = pcall(string.format, text, ...)
+        if ok then return formatted end
+    end
+    return text
+end
+Nely.L = L
+
+-- Hubs may add their own keys, in the same shape:
+--   Nely:AddStrings("fr", { ["myhub.title"] = "Mon Hub" })
+function Nely:AddStrings(code, map)
+    if type(code) ~= "string" or type(map) ~= "table" then return false end
+    STRINGS[code] = STRINGS[code] or {}
+    for key, value in pairs(map) do STRINGS[code][key] = tostring(value) end
+    return true
+end
+
+-- Live bindings. Weak-keyed: a destroyed label drops out on its own.
+-- Deliberately NOT weak-keyed. A weak table drops Instance keys on the
+-- next GC even though the label is alive and parented, because Lua does
+-- not count DataModel parenting as a reference. Entries are swept in
+-- SetLanguage instead, where a nil Parent is a reliable "gone" signal.
+local TextBindings = {}
+
+local function BindText(inst, prop, key, args, transform)
+    if typeof(inst) ~= "Instance" then return inst end
+    args = args or {}
+    local function render()
+        local text = L(key, table.unpack(args))
+        if transform then text = transform(text) end
+        return text
+    end
+    TextBindings[inst] = TextBindings[inst] or {}
+    TextBindings[inst][prop] = render
+    pcall(function() inst[prop] = render() end)
+    return inst
+end
+Nely.BindText = BindText
+
+-- Called by anything that computes text rather than storing it.
+local LanguageHooks = {}
+function Nely:OnLanguage(fn)
+    if type(fn) ~= "function" then return function() end end
+    table.insert(LanguageHooks, fn)
+    return function()
+        for i, entry in ipairs(LanguageHooks) do
+            if entry == fn then table.remove(LanguageHooks, i) return end
+        end
+    end
+end
+
+function Nely:SetLanguage(code)
+    if not STRINGS[code] then return false end
+    Nely.Language = code
+    for inst, props in pairs(TextBindings) do
+        if inst.Parent then
+            for prop, render in pairs(props) do
+                pcall(function() inst[prop] = render() end)
+            end
+        else
+            TextBindings[inst] = nil
+        end
+    end
+    for i = #LanguageHooks, 1, -1 do
+        local ok = pcall(LanguageHooks[i], code)
+        if not ok then table.remove(LanguageHooks, i) end
+    end
+    return true
+end
+
+function Nely:GetLanguages() return Nely.Languages end
+
+--==================================================================
+--  COLORED UI
+--
+--  OFF (default): the interface is metallic. Sidebar icons are muted
+--  silver, the active one is platinum, and an enabled toggle is platinum.
+--
+--  ON: those same elements take the CURRENT THEME's accent -- Crimson
+--  turns them red, Frost blue. Not random per-element colours; the one
+--  colour the user chose.
+--==================================================================
+
+Nely.ColoredUI = false
+
+-- Anything whose colour depends on the theme AND on this switch registers
+-- a repainter. Both SetTheme and SetColoredUI walk this list, which is why
+-- existing controls update in place rather than needing a rebuild.
+local Accented = {}
+
+local function RegisterAccent(fn)
+    table.insert(Accented, fn)
+    pcall(fn)
+    return function()
+        for i, entry in ipairs(Accented) do
+            if entry == fn then table.remove(Accented, i) return end
+        end
+    end
+end
+Nely.RegisterAccent = RegisterAccent
+
+local function RepaintAccents()
+    for i = #Accented, 1, -1 do
+        local ok = pcall(Accented[i])
+        -- A repainter that throws belongs to a destroyed control.
+        if not ok then table.remove(Accented, i) end
+    end
+end
+Nely.RepaintAccents = RepaintAccents
+
+-- The colour an accent-bearing element should use right now. The theme's
+-- live Accent slot is already masked by the switch, so this is simply it.
+function Nely.AccentColor()
+    local t = Nely.Theme or {}
+    return t.Accent or Color3.fromRGB(205, 210, 222)
+end
+
+-- Called after every toggle in the interface flips, with the new state.
+-- Exists so a hub can attach a sound (or telemetry) once rather than
+-- wrapping the callback of every control it creates.
+Nely.ToggleHooks = {}
+function Nely.OnToggle(fn)
+    table.insert(Nely.ToggleHooks, fn)
+    return function()
+        for i, f in ipairs(Nely.ToggleHooks) do
+            if f == fn then table.remove(Nely.ToggleHooks, i) return end
+        end
+    end
+end
+
+local function FireToggleHooks(state)
+    for _, fn in ipairs(Nely.ToggleHooks) do pcall(fn, state) end
+end
+Nely._FireToggleHooks = FireToggleHooks
+
+function Nely:SetColoredUI(state)
+    local want = state and true or false
+    if want == Nely.ColoredUI then return want end
+
+    -- Snapshot the accents everything on screen was painted with before
+    -- the mask moves, then translate that palette to the new one. Without
+    -- this, only controls that registered a repainter would follow.
+    local t = Nely.Theme
+    local before = t and {
+        Accent = t.Accent, AccentSoft = t.AccentSoft, AccentDeep = t.AccentDeep }
+
+    Nely.ColoredUI = want
+    -- Mask every theme, not just the live one. The window captured its
+    -- theme table once at open time, and a later SetTheme points
+    -- Nely.Theme at a different table -- so masking only Nely.Theme would
+    -- leave controls built afterwards reading an unmasked palette.
+    if Nely.ApplyAccentMask then
+        for _, entry in pairs(Nely.Themes or {}) do Nely.ApplyAccentMask(entry) end
+        Nely.ApplyAccentMask(t)
+    end
+
+    if before and t and Nely._TranslateTree and Nely._ColorKey then
+        local map = {}
+        for slot, colour in pairs(before) do
+            if t[slot] then map[Nely._ColorKey(colour)] = t[slot] end
+        end
+        pcall(Nely._TranslateTree, map)
+    end
+
+    RepaintAccents()
+    return want
+end
+
+--==================================================================
 --  ANIMATION PRESETS
 --==================================================================
+
+-- WindUI's rounded-pill 9-slice. Slice values read off the live build:
+-- SliceCenter 512 on every edge with SliceScale 0.0205, which is what
+-- keeps the curve smooth at switch size instead of stair-stepping the
+-- way a UICorner does.
+local PILL = "rbxassetid://111665032676235"
 
 local EASE = {
     Instant = TweenInfo.new(0.10, Enum.EasingStyle.Quad,  Enum.EasingDirection.Out),
@@ -288,6 +788,10 @@ local EASE = {
     -- Straight-line travel, for anything flying between two points where
     -- an ease would read as drag.
     Fly      = TweenInfo.new(0.34, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut),
+    -- Leaving. Quint/Out is what WindUI uses for the same job: it moves
+    -- fast at the start, so the window is most of the way gone before the
+    -- eye has finished tracking it.
+    Exit     = TweenInfo.new(0.26, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
 }
 
 local function Tween(inst, props, preset)
@@ -489,21 +993,40 @@ end
 
 -- Always returns a container so callers never have to nil-check and
 -- layouts hold their shape even when the pack fails to download.
+-- V4: every icon slot in the library also accepts a raw asset, so
+-- anywhere you can name a lucide glyph you can hand over a picture
+-- instead -- an item thumbnail, a game logo, a weapon skin.
+--
+-- Passed-through art keeps its own colours. A glyph is a silhouette meant
+-- to be tinted; a photograph tinted to the accent colour just looks
+-- broken, so raw images are flagged and the tinting skips them.
+local function IsRawAsset(name)
+    return type(name) == "string"
+       and (string.sub(name, 1, 13) == "rbxassetid://"
+         or string.sub(name, 1, 10) == "rbxthumb://"
+         or string.sub(name, 1, 11) == "rbxasset://"
+         or string.sub(name, 1, 4)  == "http")
+end
+Icons.IsRawAsset = IsRawAsset
+
 function Icons.Render(name, parent, size, color, zindex)
-    return New("ImageLabel", {
+    local raw = IsRawAsset(name)
+    local img = New("ImageLabel", {
         Name                   = "Icon",
         Size                   = UDim2.fromOffset(size, size),
         BackgroundTransparency = 1,
-        Image                  = Icons.Asset(name) or "",
-        ImageColor3            = color,
+        Image                  = raw and name or (Icons.Asset(name) or ""),
+        ImageColor3            = raw and Color3.fromRGB(255, 255, 255) or color,
         ScaleType              = Enum.ScaleType.Fit,
         ZIndex                 = zindex or (parent.ZIndex + 1),
         Parent                 = parent,
     })
+    if raw then img:SetAttribute("RawArt", true) end
+    return img
 end
 
 local function TintIcon(icon, color)
-    if icon and icon:IsA("ImageLabel") then
+    if icon and icon:IsA("ImageLabel") and not icon:GetAttribute("RawArt") then
         Tween(icon, { ImageColor3 = color }, EASE.Snap)
     end
 end
@@ -622,16 +1145,49 @@ end
 
 --------------------------------------------------------------------
 
+-- url -> { path = "nely_cache/123.png", asset = "rbxasset://..." }
+-- The path is what makes the entry verifiable; the asset string alone
+-- cannot tell you whether the file behind it still exists.
 local remoteCache = {}
 
+local function cachePath(url)
+    local hash = 5381
+    for i = 1, #url do
+        hash = (hash * 33 + string.byte(url, i)) % 4294967296
+    end
+    return ("nely_cache/%d.png"):format(hash)
+end
+
 local function CacheRemoteImage(url)
-    if remoteCache[url] then return remoteCache[url] end
+    -- Re-verify rather than trust the memo. Deleting the workspace folder
+    -- used to leave every cached image pointing at a file that was no
+    -- longer there, with no way to recover short of rejoining.
+    local hit = remoteCache[url]
+    if hit then
+        if isfile and isfile(hit.path) then
+            return hit.asset
+        end
+        remoteCache[url] = nil       -- file went away; fall through and refetch
+    end
+
+    if not (writefile and getcustomasset and isfolder and makefolder) then
+        return nil
+    end
+
+    local path = cachePath(url)
+
+    -- Already on disk from an earlier session: reuse it, no HTTP at all.
+    if isfile and isfile(path) then
+        local okReuse, asset = pcall(getcustomasset, path)
+        if okReuse and asset then
+            remoteCache[url] = { path = path, asset = asset }
+            return asset
+        end
+    end
 
     local httpRequest = (syn and syn.request) or (http and http.request)
                         or http_request or request
-    if not (httpRequest and writefile and getcustomasset and isfolder and makefolder) then
-        return nil
-    end
+    if not httpRequest then return nil end
 
     local ok, asset = pcall(function()
         if not isfolder("nely_cache") then makefolder("nely_cache") end
@@ -643,18 +1199,12 @@ local function CacheRemoteImage(url)
         local body = response and (response.Body or response.body)
         if not body or #body == 0 then return nil end
 
-        local hash = 5381
-        for i = 1, #url do
-            hash = (hash * 33 + string.byte(url, i)) % 4294967296
-        end
-
-        local path = ("nely_cache/%d.png"):format(hash)
         writefile(path, body)
         return getcustomasset(path)
     end)
 
     if ok and asset then
-        remoteCache[url] = asset
+        remoteCache[url] = { path = path, asset = asset }
         return asset
     end
     return nil
@@ -719,6 +1269,37 @@ local function ResolveGameImage(entry, callback)
         ResolveImageAsync(image, callback)
     end
 end
+
+--------------------------------------------------------------------
+--  KEYBIND STATE (shared across every keybind control)
+--------------------------------------------------------------------
+
+-- Keys a bind will accept. A modifier alone is not a shortcut, and
+-- Unknown is what Roblox reports for input it could not classify.
+-- Escape is excluded here as well as handled explicitly, so it can never
+-- be bound by any path.
+local NON_BINDABLE = {
+    [Enum.KeyCode.Unknown]      = true,
+    [Enum.KeyCode.Escape]       = true,
+    [Enum.KeyCode.LeftShift]    = true,
+    [Enum.KeyCode.RightShift]   = true,
+    [Enum.KeyCode.LeftControl]  = true,
+    [Enum.KeyCode.RightControl] = true,
+    [Enum.KeyCode.LeftAlt]      = true,
+    [Enum.KeyCode.RightAlt]     = true,
+    [Enum.KeyCode.LeftSuper]    = true,
+    [Enum.KeyCode.RightSuper]   = true,
+    [Enum.KeyCode.CapsLock]     = true,
+    [Enum.KeyCode.NumLock]      = true,
+}
+
+local function AcceptableKey(keyCode)
+    return not NON_BINDABLE[keyCode]
+end
+
+-- Exactly one keybind may listen at a time. Holds the api of whichever
+-- control currently owns the keyboard; starting a new listen cancels it.
+local ActiveKeybind = nil
 
 --==================================================================
 --  INTERACTION HELPERS
@@ -829,9 +1410,113 @@ end)
 Root.Parent = ResolveParent()
 Nely.Root = Root
 
+-- Rolls a two-stop gradient's colours around the hue wheel forever.
+-- Used by the window title; exposed so a hub can put the same treatment
+-- on anything it likes.
+function Nely.AnimateGradient(gradient, opts)
+    opts = opts or {}
+    local conn
+
+    if opts.Mono ~= false then
+        -- Greyscale sweep. The ramp is fixed and the offset travels, so
+        -- the bright band slides across the letters the way a highlight
+        -- crosses polished metal.
+        local dark = opts.Dark  or Color3.fromRGB(105, 108, 118)
+        local mid  = opts.Light or Color3.fromRGB(255, 255, 255)
+        gradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0.00, dark),
+            ColorSequenceKeypoint.new(0.35, mid),
+            ColorSequenceKeypoint.new(0.50, Color3.fromRGB(228, 231, 238)),
+            ColorSequenceKeypoint.new(0.65, mid),
+            ColorSequenceKeypoint.new(1.00, dark),
+        })
+        local speed = opts.Speed or 0.35      -- sweeps per second
+        local x = -1
+        conn = RunService.RenderStepped:Connect(function(dt)
+            if not gradient.Parent then conn:Disconnect() return end
+            x = x + dt * speed
+            if x > 1 then x = -1 end
+            gradient.Offset = Vector2.new(x, 0)
+        end)
+    else
+        local speed  = opts.Speed or 0.14
+        local spread = opts.Spread or 0.16
+        local sat    = opts.Saturation or 0.55
+        local val    = opts.Value or 1
+        local hue    = 0
+        conn = RunService.RenderStepped:Connect(function(dt)
+            if not gradient.Parent then conn:Disconnect() return end
+            hue = (hue + dt * speed) % 1
+            gradient.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromHSV(hue, sat, val)),
+                ColorSequenceKeypoint.new(0.5,
+                    Color3.fromHSV((hue + spread) % 1, sat * 0.8, val)),
+                ColorSequenceKeypoint.new(1,
+                    Color3.fromHSV((hue + spread * 2) % 1, sat, val)),
+            })
+        end)
+    end
+
+    table.insert(Nely.Connections, conn)
+    return conn
+end
+
+-- Repaint what is already on screen by colour identity: build a map from
+-- the colour as painted to the colour it should become, then walk every
+-- property that can hold one. A theme change and a Colored UI change are
+-- the same operation with a different map, which is why this is shared.
+local function ColorKey(c)
+    return ("%d|%d|%d"):format(
+        math.round(c.R * 255), math.round(c.G * 255), math.round(c.B * 255))
+end
+Nely._ColorKey = ColorKey
+
+local function TranslateTree(map)
+    local function Swap(inst, prop)
+        local swapped = map[ColorKey(inst[prop])]
+        if swapped then inst[prop] = swapped end
+    end
+    for _, inst in ipairs(Root:GetDescendants()) do
+        if inst:IsA("GuiObject") then
+            Swap(inst, "BackgroundColor3")
+        end
+        if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
+            Swap(inst, "TextColor3")
+        end
+        if inst:IsA("TextBox") then
+            Swap(inst, "PlaceholderColor3")
+        end
+        if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
+            Swap(inst, "ImageColor3")
+        end
+        if inst:IsA("ScrollingFrame") then
+            Swap(inst, "ScrollBarImageColor3")
+        end
+        if inst:IsA("UIStroke") then
+            Swap(inst, "Color")
+        end
+        if inst:IsA("UIGradient") then
+            local points, changed = {}, false
+            for _, keypoint in ipairs(inst.Color.Keypoints) do
+                local swapped = map[ColorKey(keypoint.Value)]
+                if swapped then changed = true end
+                table.insert(points,
+                    ColorSequenceKeypoint.new(keypoint.Time, swapped or keypoint.Value))
+            end
+            if changed then inst.Color = ColorSequence.new(points) end
+        end
+    end
+end
+Nely._TranslateTree = TranslateTree
+
 -- Acrylic backdrop blur
-local Blur = New("BlurEffect", { Name = "NelyBlur", Size = 0, Parent = Lighting })
-Nely.Blur = Blur
+-- Deliberately NOT parented to Lighting. The game behind the interface
+-- stays sharp; the window carries its own translucency instead.
+local Blur = Instance.new("BlurEffect")
+Blur.Name    = "NelyBlur"
+Blur.Size    = 0
+Blur.Enabled = false
+Nely.Blur    = Blur
 
 --==================================================================
 --  CUSTOM CURSOR
@@ -1059,15 +1744,15 @@ end
 
 local NotifyHolder = New("Frame", {
     Name                   = "Notifications",
-    Size                   = UDim2.new(0, 248, 1, -40),
-    Position               = UDim2.new(1, -16, 1, -16),
+    Size                   = UDim2.new(0, 196, 1, -40),
+    Position               = UDim2.new(1, -14, 1, -14),
     AnchorPoint            = Vector2.new(1, 1),
     BackgroundTransparency = 1,
     ZIndex                 = 500,
     Parent                 = Root,
 }, {
     New("UIListLayout", {
-        Padding             = UDim.new(0, 8),
+        Padding             = UDim.new(0, 6),
         VerticalAlignment   = Enum.VerticalAlignment.Bottom,
         HorizontalAlignment = Enum.HorizontalAlignment.Right,
         SortOrder           = Enum.SortOrder.LayoutOrder,
@@ -1076,8 +1761,13 @@ local NotifyHolder = New("Frame", {
 
 local notifyOrder = 0
 
+-- Toggled from the settings tab; checked here so no hub has to know the
+-- preference exists.
+Nely.NotificationsEnabled = true
+
 function Nely:Notify(opts)
     opts = opts or {}
+    if Nely.NotificationsEnabled == false then return end
     local theme    = Nely.Theme
     local title    = opts.Title    or "Notification"
     local content  = opts.Content  or ""
@@ -1111,10 +1801,10 @@ function Nely:Notify(opts)
         ZIndex                 = 502,
         Parent                 = slot,
     }, {
-        Corner(10),
+        Corner(8),
         Stroke(theme.Border, 1, 0.45),
-        Pad(9, 9, 10, 10),
-        List(7),
+        Pad(7, 7, 9, 9),
+        List(5),
     })
 
     local row = New("Frame", {
@@ -1127,20 +1817,20 @@ function Nely:Notify(opts)
     })
 
     local iconWrap = New("Frame", {
-        Size                   = UDim2.fromOffset(20, 20),
+        Size                   = UDim2.fromOffset(16, 16),
         BackgroundColor3       = tint,
         BackgroundTransparency = 0.84,
         BorderSizePixel        = 0,
         ZIndex                 = 503,
         Parent                 = row,
-    }, { Corner(6) })
-    local icon = Icons.Render(iconName, iconWrap, 11, tint, 504)
+    }, { Corner(5) })
+    local icon = Icons.Render(iconName, iconWrap, 10, tint, 504)
     icon.Position    = UDim2.fromScale(0.5, 0.5)
     icon.AnchorPoint = Vector2.new(0.5, 0.5)
 
     local textCol = New("Frame", {
-        Size                   = UDim2.new(1, -28, 0, 0),
-        Position               = UDim2.fromOffset(28, 0),
+        Size                   = UDim2.new(1, -23, 0, 0),
+        Position               = UDim2.fromOffset(23, 0),
         AutomaticSize          = Enum.AutomaticSize.Y,
         BackgroundTransparency = 1,
         ZIndex                 = 503,
@@ -1152,7 +1842,7 @@ function Nely:Notify(opts)
         BackgroundTransparency = 1,
         Text                   = title,
         TextColor3             = theme.Text,
-        TextSize               = 12,
+        TextSize               = 11,
         Font                   = Enum.Font.GothamBold,
         TextXAlignment         = Enum.TextXAlignment.Left,
         TextTruncate           = Enum.TextTruncate.AtEnd,
@@ -1168,7 +1858,7 @@ function Nely:Notify(opts)
             BackgroundTransparency = 1,
             Text                   = content,
             TextColor3             = theme.TextSub,
-            TextSize               = 11,
+            TextSize               = 10,
             Font                   = Enum.Font.Gotham,
             TextXAlignment         = Enum.TextXAlignment.Left,
             TextYAlignment         = Enum.TextYAlignment.Top,
@@ -1503,7 +2193,7 @@ end
 
 function Nely:Watermark(opts)
     opts = opts or {}
-    local theme = Nely.Theme or Nely.Themes.Cobalt
+    local theme = Nely.Theme or Nely.Themes.Metallic
 
     if Nely._watermark then Nely._watermark:Destroy() end
 
@@ -1646,7 +2336,9 @@ end
 
 function Nely:CreateWindow(opts)
     opts = opts or {}
-    local theme = Nely.Themes[opts.Theme or "Cobalt"] or Nely.Themes.Cobalt
+    local theme, themeName = ResolveTheme(opts.Theme)
+    theme = theme or Nely.Themes.Metallic
+    Nely.ThemeName = themeName or "Metallic"
     Nely.Theme = theme
 
     local title     = opts.Title     or "Nely Hub"
@@ -1734,13 +2426,26 @@ function Nely:CreateWindow(opts)
     -- Shell
     ----------------------------------------------------------------
 
+    -- V4 glass shell.
+    --
+    -- Roblox has no backdrop blur for GUI, so "glass" is built out of what
+    -- it does have: a translucent base so the game reads through, a
+    -- diagonal accent wash for depth, and a one pixel top highlight that
+    -- catches the eye the way a lit edge does. Three cheap layers beat one
+    -- flat panel, and none of them cost a frame of work to maintain.
+    --
+    -- Glass = 0 gives the old opaque look; the default leans translucent.
+    local glass = opts.Glass
+    if glass == nil then glass = 0.14 end
+    if opts.Transparent == false then glass = 0 end
+
     local shell = New("Frame", {
         Name             = "Window",
         Size             = winSize,
         Position         = UDim2.fromScale(0.5, 0.5),
         AnchorPoint      = Vector2.new(0.5, 0.5),
         BackgroundColor3 = theme.Backdrop,
-        BackgroundTransparency = opts.Transparent == false and 0 or 0.04,
+        BackgroundTransparency = glass,
         BorderSizePixel  = 0,
         -- must stay false: the shadow lives inside the shell and would be clipped away.
         -- the content frame does its own clipping for page transitions.
@@ -1748,27 +2453,71 @@ function Nely:CreateWindow(opts)
         ZIndex           = 10,
         Parent           = Root,
     }, {
-        Corner(16),
-        Stroke(theme.Border, 1, 0.3),
+        Corner(18),
+        Stroke(theme.Border, 1, 0.15),
     })
-    Shadow(shell, 30, 0.65, 16)
+    Shadow(shell, 42, 0.72, 18)
     Window.Frame = shell
 
-    -- Ambient accent wash behind everything
+    -- Layer 1: diagonal accent wash, strongest at the top left corner so
+    -- the window reads as lit from one side rather than evenly filled.
     New("Frame", {
+        Name                   = "Wash",
         Size                   = UDim2.fromScale(1, 1),
         BackgroundColor3       = theme.Accent,
-        BackgroundTransparency = 0.955,
+        BackgroundTransparency = 0.93,
         BorderSizePixel        = 0,
         ZIndex                 = 10,
         Parent                 = shell,
     }, {
-        Corner(16),
+        Corner(18),
         Gradient(ColorSequence.new({
             ColorSequenceKeypoint.new(0, theme.Accent),
-            ColorSequenceKeypoint.new(0.55, theme.Backdrop),
+            ColorSequenceKeypoint.new(0.45, theme.Backdrop),
             ColorSequenceKeypoint.new(1, theme.Backdrop),
-        }), 145),
+        }), 135),
+    })
+
+    -- Layer 2: vertical depth, darkening toward the bottom so content
+    -- sitting low on the page still separates from the edge.
+    New("Frame", {
+        Name                   = "Depth",
+        Size                   = UDim2.fromScale(1, 1),
+        BackgroundColor3       = Color3.fromRGB(0, 0, 0),
+        BackgroundTransparency = 0.88,
+        BorderSizePixel        = 0,
+        ZIndex                 = 10,
+        Parent                 = shell,
+    }, {
+        Corner(18),
+        New("UIGradient", {
+            Rotation = 90,
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 1),
+                NumberSequenceKeypoint.new(0.6, 0.92),
+                NumberSequenceKeypoint.new(1, 0.72),
+            }),
+        }),
+    })
+
+    -- Layer 3: the lit top edge. One pixel, fading out toward the sides.
+    New("Frame", {
+        Name                   = "Sheen",
+        Size                   = UDim2.new(1, -36, 0, 1),
+        Position               = UDim2.new(0, 18, 0, 1),
+        BackgroundColor3       = Color3.fromRGB(255, 255, 255),
+        BackgroundTransparency = 0.75,
+        BorderSizePixel        = 0,
+        ZIndex                 = 21,
+        Parent                 = shell,
+    }, {
+        New("UIGradient", {
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 1),
+                NumberSequenceKeypoint.new(0.5, 0),
+                NumberSequenceKeypoint.new(1, 1),
+            }),
+        }),
     })
 
     ----------------------------------------------------------------
@@ -1830,7 +2579,7 @@ function Nely:CreateWindow(opts)
     BrandMark(logo, title, opts.Logo, math.floor(logoSize * 0.58),
         math.floor(logoSize * 0.3), 22, plainLogo)
 
-    New("TextLabel", {
+    local titleLabel = New("TextLabel", {
         Name                   = "Title",
         Size                   = UDim2.fromOffset(240, 18),
         Position               = UDim2.new(0, titleX, 0.5, subtitle ~= "" and -8 or 0),
@@ -1844,6 +2593,14 @@ function Nely:CreateWindow(opts)
         ZIndex                 = 21,
         Parent                 = topbar,
     })
+
+    -- A gradient tints text by multiplying it, so the label has to be
+    -- white first or the theme colour darkens every hue it produces.
+    if opts.GradientTitle then
+        titleLabel.TextColor3 = Color3.new(1, 1, 1)
+        local titleGrad = New("UIGradient", { Parent = titleLabel })
+        Nely.AnimateGradient(titleGrad, opts.TitleGradient)
+    end
 
     if subtitle ~= "" then
         New("TextLabel", {
@@ -2418,14 +3175,14 @@ function Nely:CreateWindow(opts)
         for _, tab in ipairs(Window.Tabs) do
             if tab._label then
                 Tween(tab._label, { TextTransparency = railed and 1 or 0 }, EASE.Snap)
-                tab._label.Active = not railed
+                -- Never Active. An Active TextLabel swallows the click
+                -- instead of letting it reach the tab button behind it,
+                -- which is what killed the tab names after a collapse.
+                tab._label.Active = false
             end
-            if tab._icon then
-                -- 44px of usable button width inside the rail, 16px glyph.
-                Tween(tab._icon, {
-                    Position = UDim2.new(0, railed and 14 or 13, 0.5, 0),
-                }, ease)
-            end
+            -- Nothing to move. The icon chip sits at the centre of the
+            -- 44px the rail collapses to, which is where it already is
+            -- when the sidebar is open.
         end
 
         for _, section in ipairs(Window.TabSections) do
@@ -2686,12 +3443,21 @@ function Nely:CreateWindow(opts)
     })
 
     local haloClock = 0
-    local haloConn = RunService.RenderStepped:Connect(function(dt)
+    local haloConn
+    haloConn = RunService.RenderStepped:Connect(function(dt)
+        -- Stop for good once the interface is gone. Without this the loop
+        -- outlives its own instances and throws every frame forever.
+        if not halo.Parent or Window.Destroyed then
+            if haloConn then haloConn:Disconnect() end
+            return
+        end
         if not orb.Visible then return end
         haloClock = haloClock + dt
         local pulse = (math.sin(haloClock * 2.2) + 1) * 0.5
         halo.Size = UDim2.fromScale(1 + pulse * 0.32, 1 + pulse * 0.32)
-        halo:FindFirstChildOfClass("UIStroke").Transparency = 0.35 + pulse * 0.6
+        local ring = halo:FindFirstChildOfClass("UIStroke")
+        if not ring then return end
+        ring.Transparency = 0.35 + pulse * 0.6
     end)
     table.insert(Nely.Connections, haloConn)
 
@@ -2734,7 +3500,6 @@ function Nely:CreateWindow(opts)
         local fromOrb    = Window.Minimized
         Window.Minimized = false
         shell.Visible    = true
-        Tween(Blur, { Size = 14 }, EASE.Glide)
 
         -- The orb used to blink out of existence. It now retracts, which
         -- also covers the moment the shell is growing over the top of it.
@@ -2748,7 +3513,9 @@ function Nely:CreateWindow(opts)
         if animate == false then
             shellScale.Scale = 1
             shell.Position   = homePosition
-            shell.BackgroundTransparency = opts.Transparent == false and 0 or 0.04
+            -- `glass`, not a literal. The hardcoded 0.04 here silently
+            -- overrode the Glass option on every open.
+            shell.BackgroundTransparency = glass
             return
         end
 
@@ -2764,7 +3531,9 @@ function Nely:CreateWindow(opts)
             shell.Position   = homePosition
         end
 
-        shell.BackgroundTransparency = opts.Transparent == false and 0 or 0.04
+        -- `glass`, not a literal. The hardcoded 0.04 here silently
+            -- overrode the Glass option on every open.
+            shell.BackgroundTransparency = glass
         Tween(shell, { Position = homePosition }, EASE.Fly)
         Tween(shellScale, { Scale = 1 }, EASE.Spring)
     end
@@ -2772,7 +3541,6 @@ function Nely:CreateWindow(opts)
     local function MinimizeWindow()
         if Window.Minimized then return end
         Window.Minimized = true
-        Tween(Blur, { Size = 0 }, EASE.Smooth)
 
         homePosition = shell.Position
 
@@ -2795,12 +3563,38 @@ function Nely:CreateWindow(opts)
         Window.Destroyed = true
         UserInputService.MouseIconEnabled = true
 
-        Tween(Blur, { Size = 0 }, EASE.Smooth)
-        -- Back/In: a small swell, then away. Fading the backdrop at the
-        -- same time stops the last few frames looking like a hard cut.
-        Tween(shellScale, { Scale = 0 }, EASE.Collapse)
-        Tween(shell, { BackgroundTransparency = 1 }, EASE.Smooth)
-        Tween(orbScale, { Scale = 0 }, EASE.Collapse)
+        -- Back/In: a small swell, then away, falling as it goes. Fading
+        -- the fill, the border and anything still floating over the top
+        -- stops the last few frames looking like a hard cut.
+        Tween(shellScale, { Scale = 0.88 }, EASE.Exit)
+        Tween(shell, {
+            BackgroundTransparency = 1,
+            Position = shell.Position + UDim2.fromOffset(0, 46),
+        }, EASE.Exit)
+        Tween(orbScale, { Scale = 0 }, EASE.Exit)
+
+        local shellStroke = shell:FindFirstChildOfClass("UIStroke")
+        if shellStroke then Tween(shellStroke, { Transparency = 1 }, EASE.Smooth) end
+
+        -- Toasts outliving the window they belong to looked like a bug.
+        -- Faded rather than slid: the holder runs a UIListLayout, which
+        -- owns Position and would fight the tween.
+        for _, toast in ipairs(NotifyHolder:GetChildren()) do
+            if toast:IsA("GuiObject") then
+                Tween(toast, { BackgroundTransparency = 1 }, EASE.Smooth)
+                for _, part in ipairs(toast:GetDescendants()) do
+                    if part:IsA("TextLabel") or part:IsA("TextButton") then
+                        Tween(part, { TextTransparency = 1, BackgroundTransparency = 1 }, EASE.Smooth)
+                    elseif part:IsA("ImageLabel") or part:IsA("ImageButton") then
+                        Tween(part, { ImageTransparency = 1, BackgroundTransparency = 1 }, EASE.Smooth)
+                    elseif part:IsA("UIStroke") then
+                        Tween(part, { Transparency = 1 }, EASE.Smooth)
+                    elseif part:IsA("Frame") then
+                        Tween(part, { BackgroundTransparency = 1 }, EASE.Smooth)
+                    end
+                end
+            end
+        end
 
         task.delay(0.4, function()
             for _, conn in ipairs(Nely.Connections) do
@@ -2815,8 +3609,8 @@ function Nely:CreateWindow(opts)
     closeBtn.MouseButton1Click:Connect(function()
         Ripple(closeBtn, 24)
         Nely:Dialog({
-            Title   = "Close " .. title .. "?",
-            Content = "This shuts the interface down completely. You'll need to run the script again to bring it back.",
+            Title   = L("dialog.close_title", title),
+            Content = L("dialog.close_body"),
             Icon    = "alert",
             Buttons = {
                 { Title = "Cancel" },
@@ -2843,6 +3637,18 @@ function Nely:CreateWindow(opts)
         end
     end)
     table.insert(Nely.Connections, keyConn)
+
+    -- 0 is solid, 1 is invisible. Public so a hub can offer the control
+    -- under its own name without reaching into the shell.
+    function Window:SetTransparency(value)
+        glass = math.clamp(tonumber(value) or 0, 0, 0.95)
+        if not Window.Minimized then shell.BackgroundTransparency = glass end
+        return glass
+    end
+    -- The same thing the other way up, which is how people think about it.
+    function Window:SetOpacity(percent)
+        return Window:SetTransparency(1 - (math.clamp(tonumber(percent) or 100, 0, 100) / 100))
+    end
 
     function Window:Open()  OpenWindow(true) end
     function Window:Close() MinimizeWindow() end
@@ -2935,14 +3741,97 @@ function Nely:CreateWindow(opts)
     -- Tabs
     ----------------------------------------------------------------
 
+    -- V4 tab hues.
+    --
+    -- A sidebar of identically grey glyphs gives the eye nothing to aim
+    -- at, so every tab gets its own colour. Pass IconColor to choose, or
+    -- let this walk the hue wheel by golden ratio, which spaces any number
+    -- of tabs apart without two ever landing on the same colour. Value and
+    -- saturation stay fixed so nothing shouts louder than its neighbours.
+    -- Kept for hubs that explicitly want per-tab hues (ColorfulTabs), but
+    -- it is no longer what a tab gets by default -- twelve unrelated
+    -- rainbow glyphs is not the Nely look.
+    local function AutoHue(index)
+        local hue = ((index - 1) * 0.618033988749895) % 1
+        return Color3.fromHSV(hue, 0.55, 1)
+    end
+
+    -- Paints every sidebar row for the current selection, theme and
+    -- Colored UI state. Registered as an accent repainter below, which is
+    -- what makes the sidebar follow those switches live.
+    local function PaintSidebar(animate)
+        local ease = (animate == false) and EASE.Instant or EASE.Snap
+        local accent = Nely.AccentColor()
+        for _, tab in ipairs(Window.Tabs) do
+            local active = (Window.ActiveTab == tab)
+            -- A tab with its own IconColor keeps it; everything else
+            -- follows the accent, which is platinum unless Colored UI is on.
+            local hue = tab.IconColor or accent
+
+            Tween(tab.Button, {
+                BackgroundTransparency = active and 0.55 or 1,
+            }, ease)
+            if tab._label then
+                Tween(tab._label, {
+                    TextColor3 = active and theme.Text or theme.TextDim,
+                }, ease)
+            end
+            if tab._icon then
+                -- Off: muted silver resting, platinum selected -- opacity
+                -- carries the state. On: every glyph is coloured and
+                -- opacity still carries the state, so the sidebar reads as
+                -- a set of colours rather than one lit icon.
+                local resting = Nely.ColoredUI and hue or theme.TextSub
+                TintIcon(tab._icon, active and hue or resting)
+                if tab._chip then
+                    -- The plate lifts with the selection so the active tab
+                    -- reads as one object rather than a lit glyph on a dark
+                    -- square.
+                    Tween(tab._chip, {
+                        BackgroundTransparency = active and 0 or 0.1,
+                    }, ease)
+                    local edge = tab._chip:FindFirstChildOfClass("UIStroke")
+                    if edge then
+                        Tween(edge, {
+                            Color        = active and hue or theme.Border,
+                            Transparency = active and 0.15 or 0.4,
+                        }, ease)
+                    end
+                end
+                Tween(tab._icon, {
+                    ImageTransparency = active and 0 or 0.42,
+                }, ease)
+            end
+            if tab._marker then
+                Tween(tab._marker, { BackgroundColor3 = hue }, ease)
+                Tween(tab._marker, {
+                    Size = UDim2.fromOffset(3, active and 20 or 0),
+                }, (animate == false) and EASE.Instant or EASE.Glide)
+            end
+        end
+    end
+    Window.PaintSidebar = function(_, a) PaintSidebar(a) end
+    RegisterAccent(function()
+        if not Window.Destroyed then PaintSidebar(false) end
+    end)
+
     function Window:CreateTab(tabOpts)
         tabOpts = tabOpts or {}
         Window._tabOrder = Window._tabOrder + 1
-        local order    = Window._tabOrder
-        local tabName  = tabOpts.Name or ("Tab " .. order)
-        local iconName = tabOpts.Icon or "layers"
+        local order     = Window._tabOrder
+        local localeKey = tabOpts.LocaleKey
+        local tabName   = tabOpts.Name or (localeKey and L(localeKey)) or ("Tab " .. order)
+        local iconName  = tabOpts.Icon or "layers"
+        -- Three-way: an explicit IconColor always wins; ColorfulTabs opts
+        -- back into the rainbow; otherwise nil, meaning "follow the accent",
+        -- which is what makes the sidebar monochrome by default and lets it
+        -- track the Colored UI switch afterwards.
+        local tabHue = tabOpts.IconColor
+                    or (opts.ColorfulTabs and AutoHue(order))
+                    or nil
+        local iconColor = tabHue or Nely.AccentColor()
 
-        local Tab = { Name = tabName, Sections = {} }
+        local Tab = { Name = tabName, Sections = {}, IconColor = tabHue }
 
         -- sidebar button
         local btn = New("TextButton", {
@@ -2966,19 +3855,48 @@ function Nely:CreateWindow(opts)
             Size                   = UDim2.fromOffset(3, 0),
             Position               = UDim2.new(0, 0, 0.5, 0),
             AnchorPoint            = Vector2.new(0, 0.5),
-            BackgroundColor3       = theme.Accent,
+            -- Marker matches the tab's own hue, so the active rail and the
+            -- active glyph are visibly the same object.
+            BackgroundColor3       = iconColor,
             BorderSizePixel        = 0,
             ZIndex                 = 19,
             Parent                 = btn,
         }, { Corner(2) })
 
-        local icon = Icons.Render(iconName, btn, 16, theme.TextDim, 18)
-        icon.Position    = UDim2.new(0, 13, 0.5, 0)
-        icon.AnchorPoint = Vector2.new(0, 0.5)
+        -- The glyph sits in a plate rather than floating on the row. It
+        -- gives the sidebar the same rhythm the control rows already have,
+        -- and a 16px glyph reads better with an edge around it than
+        -- without one.
+        local chip = New("Frame", {
+            Name                   = "IconChip",
+            Size                   = UDim2.fromOffset(26, 26),
+            -- 22 is the centre of the 44px button the rail collapses to,
+            -- so the chip is already in the right place in both states and
+            -- needs no animation when the sidebar folds.
+            Position               = UDim2.new(0, 22, 0.5, 0),
+            AnchorPoint            = Vector2.new(0.5, 0.5),
+            BackgroundColor3       = theme.Elevated,
+            BackgroundTransparency = 0.1,
+            BorderSizePixel        = 0,
+            ZIndex                 = 18,
+            Parent                 = btn,
+        }, { Corner(8), Stroke(theme.Border, 1, 0.35) })
+
+        -- The glyph carries its hue whether the tab is selected or not;
+        -- selection is expressed by opacity, not by draining the colour
+        -- out. An inactive sidebar still reads as a set of colours.
+        local icon = Icons.Render(iconName, chip, 16, iconColor, 19)
+        -- Centred in the chip, not inset from the button. These two lines
+        -- have to be the last word on the glyph's position; the old
+        -- button-relative inset is what pushed it off the plate.
+        icon.Position          = UDim2.fromScale(0.5, 0.5)
+        icon.AnchorPoint       = Vector2.new(0.5, 0.5)
+        icon.ImageTransparency = 0.42
+        Tab._chip = chip
 
         local label = New("TextLabel", {
-            Size                   = UDim2.new(1, -44, 1, 0),
-            Position               = UDim2.fromOffset(38, 0),
+            Size                   = UDim2.new(1, -54, 1, 0),
+            Position               = UDim2.fromOffset(44, 0),
             BackgroundTransparency = 1,
             Text                   = tabName,
             TextColor3             = theme.TextDim,
@@ -2989,6 +3907,44 @@ function Nely:CreateWindow(opts)
             ZIndex                 = 18,
             Parent                 = btn,
         })
+        if localeKey then BindText(label, "Text", localeKey) end
+
+        -- Optional tag chip, right aligned in the row. Onyx uses these to
+        -- flag NEW and BETA; anything short works. TagColor defaults to
+        -- the tab's own hue so a tagged tab reads as one object.
+        local tagChip
+        if tabOpts.Tag and tabOpts.Tag ~= "" then
+            local tagColor = tabOpts.TagColor or iconColor
+            tagChip = New("Frame", {
+                Name                   = "Tag",
+                AnchorPoint            = Vector2.new(1, 0.5),
+                Position               = UDim2.new(1, -10, 0.5, 0),
+                Size                   = UDim2.fromOffset(0, 16),
+                AutomaticSize          = Enum.AutomaticSize.X,
+                BackgroundColor3       = tagColor,
+                BackgroundTransparency = 0.8,
+                BorderSizePixel        = 0,
+                ZIndex                 = 19,
+                Parent                 = btn,
+            }, {
+                Corner(5),
+                Stroke(tagColor, 1, 0.55),
+                Pad(0, 0, 6, 6),
+                New("TextLabel", {
+                    Size                   = UDim2.fromOffset(0, 16),
+                    AutomaticSize          = Enum.AutomaticSize.X,
+                    BackgroundTransparency = 1,
+                    Text                   = string.upper(tostring(tabOpts.Tag)),
+                    TextColor3             = tagColor,
+                    TextSize               = 9,
+                    Font                   = Enum.Font.GothamBold,
+                    ZIndex                 = 20,
+                }),
+            })
+            -- The label must not run underneath the chip.
+            label.Size = UDim2.new(1, -96, 1, 0)
+        end
+        Tab._tag = tagChip
 
         -- page
         local page = New("ScrollingFrame", {
@@ -3014,36 +3970,74 @@ function Nely:CreateWindow(opts)
         Tab.Page   = page
         Tab.Button = btn
         Tab._order = 0
+        -- Position in the sidebar, used to decide which way a switch
+        -- travels. Distinct from _order, which counts elements on the page.
+        Tab._index = order
+
+        local TAB_TRAVEL = 34
 
         local function Activate()
             if Window.ActiveTab == Tab then return end
             local previous = Window.ActiveTab
             Window.ActiveTab = Tab
 
-            for _, other in ipairs(Window.Tabs) do
-                local active = (other == Tab)
-                Tween(other.Button, {
-                    BackgroundTransparency = active and 0.55 or 1,
-                }, EASE.Snap)
-                Tween(other._label, {
-                    TextColor3 = active and theme.Text or theme.TextDim,
-                }, EASE.Snap)
-                TintIcon(other._icon, active and theme.Accent or theme.TextDim)
-                Tween(other._marker, {
-                    Size = UDim2.fromOffset(3, active and 20 or 0),
-                }, EASE.Glide)
+            PaintSidebar(true)
+
+            -- Down the sidebar means the page moves up, and vice versa.
+            -- Content follows the direction you moved in the list.
+            local dir = 1
+            if previous and previous._index and previous._index > order then
+                dir = -1
             end
 
             if previous then
-                Tween(previous.Page, { Position = UDim2.fromOffset(-18, 0) }, EASE.Snap)
-                task.delay(0.16, function()
-                    if Window.ActiveTab ~= previous then previous.Page.Visible = false end
+                local leaving = previous.Page
+                Tween(leaving, {
+                    Position = UDim2.fromOffset(0, -dir * TAB_TRAVEL),
+                }, EASE.Snap)
+                task.delay(0.18, function()
+                    -- Guarded: switching straight back mid-flight must not
+                    -- hide the page that is now the active one.
+                    if Window.ActiveTab ~= previous then
+                        leaving.Visible  = false
+                        leaving.Position = UDim2.fromOffset(0, 0)
+                    end
                 end)
             end
 
             page.Visible  = true
-            page.Position = UDim2.fromOffset(18, 0)
+            page.Position = UDim2.fromOffset(0, dir * TAB_TRAVEL)
             Tween(page, { Position = UDim2.fromOffset(0, 0) }, EASE.Glide)
+
+            -- Then the contents arrive one after another. Only the rows
+            -- that can actually be on screen are staged: past a dozen the
+            -- stagger is being played to nobody and the last card would
+            -- land a second and a half late.
+            local index = 0
+            for _, child in ipairs(page:GetChildren()) do
+                if child:IsA("GuiObject") and child.Visible then
+                    index = index + 1
+                    if index > 12 then break end
+                    local scale = child:FindFirstChild("EntryScale")
+                    if not scale then
+                        scale = Instance.new("UIScale")
+                        scale.Name   = "EntryScale"
+                        scale.Parent = child
+                    end
+                    scale.Scale = 0.90
+                    -- 38ms apart, so the wave is something you can follow
+                    -- down the page rather than twelve rows moving at once.
+                    -- Back/Out overshoots a hair and settles, which is what
+                    -- makes a card look like it arrived instead of resized.
+                    task.delay(index * 0.038, function()
+                        if scale.Parent and Window.ActiveTab == Tab then
+                            Tween(scale, { Scale = 1 }, EASE.Pop)
+                        elseif scale.Parent then
+                            scale.Scale = 1
+                        end
+                    end)
+                end
+            end
         end
 
         Tab._label  = label
@@ -3051,15 +4045,22 @@ function Nely:CreateWindow(opts)
         Tab._marker = marker
         Tab.Activate = Activate
 
+        -- Hover brightens the glyph toward silver as well as the row;
+        -- previously only the label moved, so pointing at a tab lit half
+        -- of it.
         btn.MouseEnter:Connect(function()
             if Window.ActiveTab == Tab then return end
             Tween(btn, { BackgroundTransparency = 0.8 }, EASE.Snap)
             Tween(label, { TextColor3 = theme.TextSub }, EASE.Snap)
+            TintIcon(icon, theme.Text)
+            Tween(icon, { ImageTransparency = 0.15 }, EASE.Snap)
         end)
         btn.MouseLeave:Connect(function()
             if Window.ActiveTab == Tab then return end
             Tween(btn, { BackgroundTransparency = 1 }, EASE.Snap)
             Tween(label, { TextColor3 = theme.TextDim }, EASE.Snap)
+            TintIcon(icon, theme.TextSub)
+            Tween(icon, { ImageTransparency = 0.42 }, EASE.Snap)
         end)
         btn.MouseButton1Click:Connect(function()
             -- Ripple sat at ZIndex 19, above the icon (18) and label (18), so
@@ -3070,6 +4071,7 @@ function Nely:CreateWindow(opts)
         end)
 
         table.insert(Window.Tabs, Tab)
+        PaintSidebar(false)
 
         -- Only while railed. With the sidebar expanded the name is already
         -- sitting right there, and a tooltip repeating it is just noise.
@@ -3263,8 +4265,12 @@ function Nely:CreateWindow(opts)
         -- 16px gutters and a 20px gap between title and description. The
         -- previous 14/17 pairing put the two lines close enough that they
         -- read as one block.
-        local function RowText(row, name, description, leftPad, info)
+        local function RowText(row, name, description, leftPad, info, nameKey, descKey)
             leftPad = leftPad or 16
+            -- Registered keys win over literal text and are bound live, so
+            -- SetLanguage repaints them without rebuilding the window.
+            if nameKey then name = L(nameKey) end
+            if descKey then description = L(descKey) end
             local hasDesc = description and description ~= ""
             local nameLabel = New("TextLabel", {
                 Size                   = UDim2.new(1, -leftPad - 134, 0, 16),
@@ -3280,9 +4286,10 @@ function Nely:CreateWindow(opts)
                 ZIndex                 = 18,
                 Parent                 = row,
             })
+            if nameKey then BindText(nameLabel, "Text", nameKey) end
             InfoDot(row, nameLabel, info, 19)
             if hasDesc then
-                New("TextLabel", {
+                local descLabel = New("TextLabel", {
                     Size                   = UDim2.new(1, -leftPad - 134, 0, 14),
                     Position               = UDim2.new(0, leftPad, 0.5, 10),
                     AnchorPoint            = Vector2.new(0, 0.5),
@@ -3296,6 +4303,7 @@ function Nely:CreateWindow(opts)
                     ZIndex                 = 18,
                     Parent                 = row,
                 })
+                if descKey then BindText(descLabel, "Text", descKey) end
             end
         end
 
@@ -3539,7 +4547,7 @@ function Nely:CreateWindow(opts)
         -- Section
         ------------------------------------------------------------
 
-        function Tab:CreateSection(name)
+        function Tab:CreateSection(name, nameKey)
             local holder = New("Frame", {
                 Size                   = UDim2.new(1, 0, 0, 30),
                 BackgroundTransparency = 1,
@@ -3551,7 +4559,7 @@ function Nely:CreateWindow(opts)
                 Size                   = UDim2.new(1, 0, 1, 0),
                 Position               = UDim2.fromOffset(2, 10),
                 BackgroundTransparency = 1,
-                Text                   = string.upper(name or "Section"),
+                Text                   = string.upper(nameKey and L(nameKey) or (name or "Section")),
                 TextColor3             = theme.TextDim,
                 TextSize               = 11,
                 Font                   = Enum.Font.GothamBold,
@@ -3559,6 +4567,9 @@ function Nely:CreateWindow(opts)
                 ZIndex                 = 18,
                 Parent                 = holder,
             })
+            -- Bound as UPPER(translation), not UPPER(key): the heading is
+            -- styled in caps but the key is not text.
+            if nameKey then BindText(label, "Text", nameKey, nil, string.upper) end
             return {
                 Set     = function(_, newName) label.Text = string.upper(newName) end,
                 Destroy = function() holder:Destroy() end,
@@ -3648,7 +4659,7 @@ function Nely:CreateWindow(opts)
         function Tab:CreateButton(cfg)
             cfg = cfg or {}
             local row = Row(cfg.Description and ROW_HD or ROW_H)
-            RowText(row, cfg.Name or "Button", cfg.Description, RowIcon(row, cfg.Icon), cfg.Info)
+            RowText(row, cfg.Name or "Button", cfg.Description, RowIcon(row, cfg.Icon), cfg.Info, cfg.NameKey, cfg.DescKey)
 
             local hit = New("TextButton", {
                 Size             = UDim2.fromScale(1, 1),
@@ -3693,34 +4704,57 @@ function Nely:CreateWindow(opts)
             cfg = cfg or {}
             local state = cfg.CurrentValue == true
             local row = Row(cfg.Description and ROW_HD or ROW_H)
-            RowText(row, cfg.Name or "Toggle", cfg.Description, RowIcon(row, cfg.Icon), cfg.Info)
+            RowText(row, cfg.Name or "Toggle", cfg.Description, RowIcon(row, cfg.Icon), cfg.Info, cfg.NameKey, cfg.DescKey)
 
-            local track = New("Frame", {
-                Size             = UDim2.fromOffset(38, 21),
-                Position         = UDim2.new(1, -14, 0.5, 0),
-                AnchorPoint      = Vector2.new(1, 0.5),
-                BackgroundColor3 = state and theme.Accent or theme.Elevated,
-                BorderSizePixel  = 0,
-                ZIndex           = 18,
-                Parent           = row,
-            }, { Corner(11) })
+            local track = New("ImageLabel", {
+                Size                   = UDim2.fromOffset(38, 21),
+                Position               = UDim2.new(1, -14, 0.5, 0),
+                AnchorPoint            = Vector2.new(1, 0.5),
+                BackgroundTransparency = 1,
+                Image                  = PILL,
+                ScaleType              = Enum.ScaleType.Slice,
+                SliceCenter            = Rect.new(512, 512, 512, 512),
+                SliceScale             = 0.0205,
+                ImageColor3            = state and Nely.AccentColor() or theme.Elevated,
+                ZIndex                 = 18,
+                Parent                 = row,
+            })
 
-            local knob = New("Frame", {
-                Size             = UDim2.fromOffset(15, 15),
-                Position         = UDim2.new(0, state and 20 or 3, 0.5, 0),
-                AnchorPoint      = Vector2.new(0, 0.5),
-                BackgroundColor3 = Color3.new(1, 1, 1),
-                BorderSizePixel  = 0,
-                ZIndex           = 19,
-                Parent           = track,
-            }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+            -- Lightens toward the top so the switch has a lit edge. Held
+            -- at full transparency while off, since a gradient over the
+            -- grey track is invisible anyway and this saves a branch.
+            -- A control may bring its own ramp; otherwise the switch gets
+            -- the default top-lit white one.
+            local customRamp = cfg.Gradient and ColorSequence.new(cfg.Gradient) or nil
+            local trackGrad = New("UIGradient", {
+                Rotation = customRamp and 0 or 90,
+                Color    = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(190, 190, 200)),
+                }),
+                Parent   = track,
+            })
 
-            -- Check sits on the empty side of the track and fades with the
-            -- state, so "on" reads at a glance instead of only from the
-            -- knob's position.
-            local tick = Icons.Render("check", track, 11, Color3.new(1, 1, 1), 19)
-            tick.Position         = UDim2.fromOffset(5, 3)
-            tick.ImageTransparency = state and 0.15 or 1
+            -- Off: a muted knob on a dark track. On: it brightens. Both
+            -- ends stay legible whether the track is platinum or a saturated
+            -- theme accent.
+            local knob = New("ImageLabel", {
+                Size                   = UDim2.fromOffset(15, 15),
+                Position               = UDim2.new(0, state and 20 or 3, 0.5, 0),
+                AnchorPoint            = Vector2.new(0, 0.5),
+                BackgroundTransparency = 1,
+                Image                  = PILL,
+                ScaleType              = Enum.ScaleType.Slice,
+                SliceCenter            = Rect.new(512, 512, 512, 512),
+                SliceScale             = 0.0205,
+                ImageColor3            = state and Color3.new(1, 1, 1) or theme.TextSub,
+                ZIndex                 = 19,
+                Parent                 = track,
+            })
+
+            -- No glyph inside the switch. The knob's position and the
+            -- track's colour carry the state; a checkmark on top of that is
+            -- a third signal saying the same thing, and it looked cheap.
 
             local hit = New("TextButton", {
                 Size                   = UDim2.fromScale(1, 1),
@@ -3733,11 +4767,38 @@ function Nely:CreateWindow(opts)
 
             local api = {}
 
+            -- Repaint from current settings. Separated from Apply so the
+            -- accent repainter can call it without touching state or firing
+            -- the callback.
+            local function Paint(animate)
+                local ease = (animate == false) and EASE.Instant or EASE.Snap
+                Tween(track, {
+                    ImageColor3 = state and Nely.AccentColor() or theme.Elevated,
+                }, ease)
+                -- Full white multiplier when off leaves the grey alone.
+                trackGrad.Color = state
+                    and (customRamp or ColorSequence.new({
+                        ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+                        ColorSequenceKeypoint.new(1, Color3.fromRGB(178, 178, 190)),
+                    }))
+                    or ColorSequence.new(Color3.new(1, 1, 1))
+                Tween(knob, {
+                    ImageColor3 = state and Color3.new(1, 1, 1) or theme.TextSub,
+                }, ease)
+            end
+
+            -- Follows theme changes and the Colored UI switch in place.
+            local unregister = RegisterAccent(function()
+                if row.Parent then Paint(false) else error("gone", 0) end
+            end)
+
             local function Apply(value, fire)
                 state = value
-                Tween(track, { BackgroundColor3 = state and theme.Accent or theme.Elevated }, EASE.Snap)
+                Paint(true)
+                -- The knob springs; the colours do not. Overshooting a
+                -- position reads as weight, overshooting a colour reads as
+                -- a rendering fault.
                 Tween(knob, { Position = UDim2.new(0, state and 20 or 3, 0.5, 0) }, EASE.Pop)
-                Tween(tick, { ImageTransparency = state and 0.15 or 1 }, EASE.Snap)
                 if flag then
                     Nely.Flags[flag] = state
                     -- anything that declared Depends = "<flag>" greys itself
@@ -3745,7 +4806,10 @@ function Nely:CreateWindow(opts)
                     Window:_Sync(flag, state)
                 end
                 api.CurrentValue = state
-                if fire and cfg.Callback then task.spawn(cfg.Callback, state) end
+                if fire then
+                    FireToggleHooks(state)
+                    if cfg.Callback then task.spawn(cfg.Callback, state) end
+                end
             end
 
             hit.MouseEnter:Connect(function()
@@ -3758,7 +4822,7 @@ function Nely:CreateWindow(opts)
 
             api.CurrentValue = state
             api.Set     = function(_, value) Apply(value, true) end
-            api.Destroy = function() row:Destroy() end
+            api.Destroy = function() unregister() row:Destroy() end
             if flag then
                 Nely.Flags[flag] = state
                 task.defer(function() Window:_Sync(flag, state) end)
@@ -3794,7 +4858,7 @@ function Nely:CreateWindow(opts)
                 Size                   = UDim2.new(1, -lp - 74, 0, 15),
                 Position               = UDim2.fromOffset(lp, titleY),
                 BackgroundTransparency = 1,
-                Text                   = cfg.Name or "Slider",
+                Text                   = cfg.NameKey and L(cfg.NameKey) or (cfg.Name or "Slider"),
                 TextColor3             = theme.Text,
                 TextSize               = 13,
                 Font                   = Enum.Font.GothamMedium,
@@ -3802,6 +4866,7 @@ function Nely:CreateWindow(opts)
                 ZIndex                 = 18,
                 Parent                 = row,
             })
+            if cfg.NameKey then BindText(sliderLabel, "Text", cfg.NameKey) end
             InfoDot(row, sliderLabel, cfg.Info, 19)
 
             local readout = New("TextLabel", {
@@ -3933,7 +4998,7 @@ function Nely:CreateWindow(opts)
         function Tab:CreateInput(cfg, flag)
             cfg = cfg or {}
             local row = Row(cfg.Description and ROW_HD or ROW_H)
-            RowText(row, cfg.Name or "Input", cfg.Description, RowIcon(row, cfg.Icon), cfg.Info)
+            RowText(row, cfg.Name or "Input", cfg.Description, RowIcon(row, cfg.Icon), cfg.Info, cfg.NameKey, cfg.DescKey)
 
             local field = New("Frame", {
                 Size             = UDim2.fromOffset(140, 28),
@@ -4016,7 +5081,7 @@ function Nely:CreateWindow(opts)
                 Size                   = UDim2.new(1, -lp - 144, 0, 16),
                 Position               = UDim2.new(0, lp, 0, math.floor(rowHeight / 2) - 8),
                 BackgroundTransparency = 1,
-                Text                   = cfg.Name or "Dropdown",
+                Text                   = cfg.NameKey and L(cfg.NameKey) or (cfg.Name or "Dropdown"),
                 TextColor3             = theme.Text,
                 TextSize               = 13,
                 Font                   = Enum.Font.GothamMedium,
@@ -4024,6 +5089,7 @@ function Nely:CreateWindow(opts)
                 ZIndex                 = 18,
                 Parent                 = row,
             })
+            if cfg.NameKey then BindText(ddLabel, "Text", cfg.NameKey) end
             InfoDot(row, ddLabel, cfg.Info, 22)
 
             local function SummaryText()
@@ -4084,9 +5150,17 @@ function Nely:CreateWindow(opts)
                     if child:IsA("TextButton") then child:Destroy() end
                 end
                 entries = {}
+                -- V4: an option can carry a picture. Pass OptionIcons as
+                -- {[optionText] = "rbxassetid://..."} and the row grows a
+                -- thumbnail. Picking a skin by name is guesswork; picking
+                -- it by its picture is not. Rows without an entry in the
+                -- map keep the plain layout, so a partly illustrated list
+                -- still lines up.
+                local icons  = cfg.OptionIcons
+                local rowH   = icons and 34 or 30
                 for index, opt in ipairs(options) do
                     local entry = New("TextButton", {
-                        Size                   = UDim2.new(1, 0, 0, 30),
+                        Size                   = UDim2.new(1, 0, 0, rowH),
                         BackgroundColor3       = theme.Elevated,
                         BackgroundTransparency = 0.35,
                         AutoButtonColor        = false,
@@ -4096,15 +5170,34 @@ function Nely:CreateWindow(opts)
                         Parent                 = optionHost,
                     }, { Corner(8) })
 
+                    local textX = 11
+                    local art   = icons and icons[opt]
+                    if art then
+                        New("ImageLabel", {
+                            Name                   = "Thumb",
+                            Size                   = UDim2.fromOffset(22, 22),
+                            Position               = UDim2.new(0, 8, 0.5, 0),
+                            AnchorPoint            = Vector2.new(0, 0.5),
+                            BackgroundColor3       = theme.Base,
+                            BackgroundTransparency = 0.4,
+                            Image                  = art,
+                            ScaleType              = Enum.ScaleType.Fit,
+                            ZIndex                 = 20,
+                            Parent                 = entry,
+                        }, { Corner(6) })
+                        textX = 38
+                    end
+
                     local label = New("TextLabel", {
-                        Size                   = UDim2.new(1, -40, 1, 0),
-                        Position               = UDim2.fromOffset(11, 0),
+                        Size                   = UDim2.new(1, -(textX + 29), 1, 0),
+                        Position               = UDim2.fromOffset(textX, 0),
                         BackgroundTransparency = 1,
                         Text                   = opt,
                         TextColor3             = theme.TextSub,
                         TextSize               = 12,
                         Font                   = Enum.Font.Gotham,
                         TextXAlignment         = Enum.TextXAlignment.Left,
+                        TextTruncate           = Enum.TextTruncate.AtEnd,
                         ZIndex                 = 20,
                         Parent                 = entry,
                     })
@@ -4118,7 +5211,11 @@ function Nely:CreateWindow(opts)
                         if multi then
                             selected[opt] = not selected[opt] or nil
                         else
-                            selected = { [opt] = true }
+                            -- Cleared in place: api.CurrentOption holds a
+                            -- reference to this table, and reassigning it
+                            -- would leave that reference on the old one.
+                            for k in pairs(selected) do selected[k] = nil end
+                            selected[opt] = true
                         end
                         Refresh()
                         if flag then Nely.Flags[flag] = multi and selected or opt end
@@ -4162,12 +5259,36 @@ function Nely:CreateWindow(opts)
 
             local api = {
                 CurrentOption = selected,
+                -- Accepts the config-shaped table LoadConfig sends, and
+                -- also a bare option name or list, which is what every
+                -- caller reaches for first.
                 Set = function(_, newCfg)
-                    if newCfg.Options then options = newCfg.Options; BuildOptions() end
+                    if type(newCfg) == "string" then newCfg = { CurrentOption = { newCfg } } end
+                    if type(newCfg) ~= "table" then return end
+                    if newCfg[1] ~= nil and newCfg.CurrentOption == nil and newCfg.Options == nil then
+                        newCfg = { CurrentOption = newCfg }
+                    end
+
+                    if newCfg.Options then options = newCfg.Options BuildOptions() end
                     if newCfg.CurrentOption then
-                        selected = {}
+                        for k in pairs(selected) do selected[k] = nil end
                         for _, v in ipairs(newCfg.CurrentOption) do selected[v] = true end
                         Refresh()
+
+                        -- The whole point of restoring a config is that the
+                        -- feature follows. Repainting the row alone left the
+                        -- interface claiming a setting the script was not
+                        -- actually using.
+                        local picked = {}
+                        for _, o in ipairs(options) do
+                            if selected[o] then table.insert(picked, o) end
+                        end
+                        if flag then
+                            Nely.Flags[flag] = multi and selected or picked[1]
+                        end
+                        if cfg.Callback then
+                            task.spawn(cfg.Callback, multi and picked or picked[1])
+                        end
                     end
                 end,
                 Destroy = function() row:Destroy() end,
@@ -4192,26 +5313,35 @@ function Nely:CreateWindow(opts)
         --
         -- Clicking the chip cycles it, so a hub gets all three without
         -- shipping three separate controls.
-        local KEYBIND_MODES = { "Press", "Hold", "Toggle" }
+        ------------------------------------------------------------
+        -- Keybind
+        --
+        -- One job: hold a key, fire the callback once when it is pressed.
+        --
+        -- The Press / Hold / Toggle selector is gone. It put a three-way
+        -- decision in front of the user for something the hub author had
+        -- already decided, and the extra chip made one control read as two
+        -- ([ HOLD ][ E ]). A hub wanting toggle behaviour keeps its own
+        -- boolean in the callback -- it always did anyway.
+        --
+        -- Mode, LockMode and OnModeChanged are still accepted and ignored
+        -- so hubs written against the old signature keep loading; they
+        -- render nothing.
+        ------------------------------------------------------------
 
         function Tab:CreateKeybind(cfg, flag)
             cfg = cfg or {}
-            local current   = cfg.CurrentBind or "None"
-            local listening = false
-            local held      = false
-            local toggled   = false
-
-            local modeIndex = 1
-            for index, name in ipairs(KEYBIND_MODES) do
-                if cfg.Mode == name then modeIndex = index end
-            end
-            local locked = cfg.LockMode == true
+            local api
+            local current = cfg.CurrentBind or cfg.Default or "None"
 
             local row = Row(cfg.Description and ROW_HD or ROW_H)
-            RowText(row, cfg.Name or "Keybind", cfg.Description, RowIcon(row, cfg.Icon), cfg.Info)
+            RowText(row, cfg.Name or "Keybind", cfg.Description,
+                    RowIcon(row, cfg.Icon), cfg.Info, cfg.NameKey, cfg.DescKey)
 
+            -- Just the key. Nothing beside it.
             local pill = New("TextButton", {
-                Size             = UDim2.fromOffset(84, 27),
+                Name             = "KeyPill",
+                Size             = UDim2.fromOffset(72, 27),
                 Position         = UDim2.new(1, -14, 0.5, 0),
                 AnchorPoint      = Vector2.new(1, 0.5),
                 BackgroundColor3 = theme.Elevated,
@@ -4224,99 +5354,176 @@ function Nely:CreateWindow(opts)
                 Parent           = row,
             }, { Corner(8), Stroke(theme.Border, 1, 0.55) })
 
-            -- Sits flush against the key pill so the pair reads as one
-            -- control: [ HOLD ][ E ]
-            local chip = New("TextButton", {
-                Size             = UDim2.fromOffset(52, 27),
-                Position         = UDim2.new(1, -100, 0.5, 0),
-                AnchorPoint      = Vector2.new(1, 0.5),
-                BackgroundColor3 = theme.Elevated,
-                BackgroundTransparency = 0.45,
-                AutoButtonColor  = false,
-                Text             = string.upper(KEYBIND_MODES[modeIndex]),
-                TextColor3       = theme.TextDim,
-                TextSize         = 9,
-                Font             = Enum.Font.GothamBold,
-                ZIndex           = 19,
-                Parent           = row,
-            }, { Corner(8) })
+            ----------------------------------------------------------
+            -- Listening
+            --
+            -- Entering listening mode must never be a trap. Every exit
+            -- except a real keyboard key leaves the existing bind alone:
+            --
+            --   any mouse button   cancel, restore   (never binds a mouse)
+            --   click this pill    cancel, restore
+            --   Escape             cancel, restore   (never binds Escape)
+            --   a valid key        assign
+            --   Backspace/Delete   clear to None, deliberately
+            --
+            -- Event ORDER is what makes this work. InputBegan fires on
+            -- mouse DOWN and MouseButton1Click on mouse UP, so:
+            --   opening   down (not listening -> ignored), up -> start
+            --   cancelling down (listening -> cancel); the up that follows
+            --             lands on this same pill and must NOT re-open it,
+            --             hence the short per-pill suppression window.
+            ----------------------------------------------------------
 
-            AttachTooltip(chip, locked and "Trigger mode" or "Click to change trigger mode")
+            local listening = false
+            local restore   = current
+            local dotToken  = 0
+            -- Set by the pill's own InputBegan. The global handler reads it
+            -- one step later, so it does not matter which fires first.
+            local pillPressAt = -1
 
-            local function SetMode(index)
-                modeIndex = ((index - 1) % #KEYBIND_MODES) + 1
-                chip.Text = string.upper(KEYBIND_MODES[modeIndex])
-                held, toggled = false, false
-                if cfg.OnModeChanged then
-                    task.spawn(cfg.OnModeChanged, KEYBIND_MODES[modeIndex])
-                end
+            local function Paint()
+                Tween(pill, {
+                    BackgroundColor3 = listening and Nely.AccentColor() or theme.Elevated,
+                    TextColor3       = listening and theme.Backdrop or theme.TextSub,
+                }, EASE.Snap)
             end
 
-            if not locked then
-                chip.MouseEnter:Connect(function()
-                    Tween(chip, { BackgroundTransparency = 0.15, TextColor3 = theme.Text }, EASE.Snap)
-                end)
-                chip.MouseLeave:Connect(function()
-                    Tween(chip, { BackgroundTransparency = 0.45, TextColor3 = theme.TextDim }, EASE.Snap)
-                end)
-                chip.MouseButton1Click:Connect(function() SetMode(modeIndex + 1) end)
-            end
-
-            pill.MouseButton1Click:Connect(function()
-                listening = true
-                pill.Text = "Press key"
-                Tween(pill, { BackgroundColor3 = theme.Accent, TextColor3 = Color3.new(1, 1, 1) }, EASE.Snap)
-            end)
-
-            local bindConn = UserInputService.InputBegan:Connect(function(input, processed)
-                if not listening or processed then return end
-                if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+            local function StopListening(keepOld)
+                if not listening then return end
                 listening = false
-                current   = input.KeyCode.Name
+                dotToken  = dotToken + 1          -- kills the ellipsis loop
+                if ActiveKeybind == api then ActiveKeybind = nil end
+                if keepOld then current = restore end
                 pill.Text = current
-                Tween(pill, { BackgroundColor3 = theme.Elevated, TextColor3 = theme.TextSub }, EASE.Snap)
-                if flag then Nely.Flags[flag] = current end
-                if cfg.OnChanged then task.spawn(cfg.OnChanged, input.KeyCode) end
-            end)
-            table.insert(Nely.Connections, bindConn)
+                Paint()
+            end
 
-            local fireConn = UserInputService.InputBegan:Connect(function(input, processed)
-                if listening or processed then return end
-                if input.KeyCode.Name ~= current then return end
-                local mode = KEYBIND_MODES[modeIndex]
-                if mode == "Hold" then
-                    if held then return end
-                    held = true
-                    if cfg.Callback then task.spawn(cfg.Callback, true) end
-                elseif mode == "Toggle" then
-                    toggled = not toggled
-                    if cfg.Callback then task.spawn(cfg.Callback, toggled) end
-                else
-                    if cfg.Callback then task.spawn(cfg.Callback) end
+            local function StartListening()
+                -- One listener at a time. Whatever was waiting gives up and
+                -- keeps its own bind, rather than two pills racing for the
+                -- next keypress.
+                if ActiveKeybind and ActiveKeybind ~= api then
+                    ActiveKeybind:Cancel()
                 end
-            end)
-            table.insert(Nely.Connections, fireConn)
+                listening     = true
+                restore       = current
+                ActiveKeybind = api
+                Paint()
 
-            local releaseConn = UserInputService.InputEnded:Connect(function(input, processed)
-                if input.KeyCode.Name ~= current then return end
-                if KEYBIND_MODES[modeIndex] ~= "Hold" or not held then return end
-                held = false
-                if cfg.Callback then task.spawn(cfg.Callback, false) end
-            end)
-            table.insert(Nely.Connections, releaseConn)
-
-            local api = {
-                CurrentBind = current,
-                Mode        = KEYBIND_MODES[modeIndex],
-                Set = function(_, key) current = key; pill.Text = key end,
-                SetMode = function(_, name)
-                    for index, candidate in ipairs(KEYBIND_MODES) do
-                        if candidate == name then SetMode(index) end
+                dotToken = dotToken + 1
+                local mine = dotToken
+                task.spawn(function()
+                    local n = 0
+                    while listening and dotToken == mine do
+                        n = (n % 3) + 1
+                        pill.Text = string.rep("\u{00B7} ", n)
+                        task.wait(0.2)
                     end
-                    api.Mode = KEYBIND_MODES[modeIndex]
+                end)
+            end
+
+            -- Press, not click. The release fires too late to beat the
+            -- global handler, which is what made the old version depend on
+            -- a suppression window.
+            pill.InputBegan:Connect(function(input)
+                local it = input.UserInputType
+                if it ~= Enum.UserInputType.MouseButton1
+                and it ~= Enum.UserInputType.Touch then return end
+                pillPressAt = os.clock()
+
+                if listening then
+                    -- Second press on a listening pill CLEARS the bind.
+                    -- Escape remains the way to back out and keep the key.
+                    current, restore = "Unknown", "Unknown"
+                    StopListening(false)
+                    api.CurrentBind = current
+                    if flag then Nely.Flags[flag] = current end
+                    if cfg.OnChanged then task.spawn(cfg.OnChanged, nil) end
+                    return
+                end
+                StartListening()
+            end)
+
+            pill.MouseEnter:Connect(function()
+                if listening then return end
+                Tween(pill, { TextColor3 = theme.Text }, EASE.Snap)
+            end)
+            pill.MouseLeave:Connect(function()
+                if listening then return end
+                Tween(pill, { TextColor3 = theme.TextSub }, EASE.Snap)
+            end)
+
+            local inputConn = UserInputService.InputBegan:Connect(function(input, processed)
+                if listening then
+                    local it = input.UserInputType
+                    -- A pointer press elsewhere cancels and keeps the key.
+                    -- A press ON this pill clears instead, and that is the
+                    -- pill's own handler's job.
+                    if it == Enum.UserInputType.MouseButton1
+                    or it == Enum.UserInputType.MouseButton2
+                    or it == Enum.UserInputType.MouseButton3
+                    or it == Enum.UserInputType.Touch then
+                        local pressed = os.clock()
+                        task.defer(function()
+                            -- By now the pill's handler has run if it was
+                            -- going to, whichever order the two signals
+                            -- arrived in.
+                            if not listening then return end
+                            if pressed - pillPressAt < 0.05 then return end
+                            StopListening(true)
+                        end)
+                        return
+                    end
+                    if it ~= Enum.UserInputType.Keyboard then return end
+
+                    local key = input.KeyCode
+                    if key == Enum.KeyCode.Escape then
+                        StopListening(true)
+                        return
+                    end
+                    if key == Enum.KeyCode.Backspace or key == Enum.KeyCode.Delete then
+                        current, restore = "None", "None"
+                        StopListening(false)
+                        api.CurrentBind = current
+                        if flag then Nely.Flags[flag] = current end
+                        if cfg.OnChanged then task.spawn(cfg.OnChanged, nil) end
+                        return
+                    end
+                    if not AcceptableKey(key) then return end
+
+                    current, restore = key.Name, key.Name
+                    StopListening(false)
+                    api.CurrentBind = current
+                    if flag then Nely.Flags[flag] = current end
+                    if cfg.OnChanged then task.spawn(cfg.OnChanged, key) end
+                    return
+                end
+
+                -- Not listening: this is the bind firing. Once per press.
+                if processed then return end
+                if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+                if current == "None" or current == "Unknown" then return end
+                if input.KeyCode.Name ~= current then return end
+                if cfg.Callback then task.spawn(cfg.Callback) end
+            end)
+            table.insert(Nely.Connections, inputConn)
+
+            api = {
+                CurrentBind = current,
+                Set = function(_, key)
+                    current = tostring(key or "None")
+                    restore = current
+                    api.CurrentBind = current
+                    if not listening then pill.Text = current end
+                    if flag then Nely.Flags[flag] = current end
                 end,
-                Destroy = function() row:Destroy() end,
+                Cancel  = function() StopListening(true) end,
+                -- Accepted and ignored, for hubs written against the old API.
+                SetMode = function() end,
+                Mode    = "Press",
+                Destroy = function() StopListening(true) row:Destroy() end,
             }
+
             Lockable(row, api)
             BindDepend(api, cfg.Depends)
             Window:RegisterElement(flag, api)
@@ -4389,11 +5596,11 @@ function Nely:CreateWindow(opts)
             local row = Row(cfg.Description and ROW_HD or ROW_H)
             local lp  = RowIcon(row, cfg.Icon)
 
-            New("TextLabel", {
+            local pbLabel = New("TextLabel", {
                 Size                   = UDim2.new(1, -80, 0, 15),
                 Position               = UDim2.fromOffset(lp, 14),
                 BackgroundTransparency = 1,
-                Text                   = cfg.Name or "Progress",
+                Text                   = cfg.NameKey and L(cfg.NameKey) or (cfg.Name or "Progress"),
                 TextColor3             = theme.Text,
                 TextSize               = 13,
                 Font                   = Enum.Font.GothamMedium,
@@ -4401,6 +5608,7 @@ function Nely:CreateWindow(opts)
                 ZIndex                 = 18,
                 Parent                 = row,
             })
+            if cfg.NameKey then BindText(pbLabel, "Text", cfg.NameKey) end
 
             local readout = New("TextLabel", {
                 Size                   = UDim2.fromOffset(56, 15),
@@ -4478,7 +5686,7 @@ function Nely:CreateWindow(opts)
                 Size                   = UDim2.new(1, -lp - 74, 0, 16),
                 Position               = UDim2.new(0, lp, 0, math.floor(rowHeight / 2) - 8),
                 BackgroundTransparency = 1,
-                Text                   = cfg.Name or "Colour",
+                Text                   = cfg.NameKey and L(cfg.NameKey) or (cfg.Name or "Colour"),
                 TextColor3             = theme.Text,
                 TextSize               = 13,
                 Font                   = Enum.Font.GothamMedium,
@@ -4486,6 +5694,7 @@ function Nely:CreateWindow(opts)
                 ZIndex                 = 18,
                 Parent                 = row,
             })
+            if cfg.NameKey then BindText(cpLabel, "Text", cfg.NameKey) end
             InfoDot(row, cpLabel, cfg.Info, 22)
 
             local swatch = New("Frame", {
@@ -5054,6 +6263,291 @@ function Nely:CreateWindow(opts)
         ------------------------------------------------------------
         -- Game grid  (script-hub specific)
         ------------------------------------------------------------
+
+        ------------------------------------------------------------
+        -- Item grid
+        --
+        -- Pick-by-picture: a wrapping grid of artwork cards. Used by the
+        -- skin changer and the crosshair picker, where the names alone
+        -- ("Kitty v2", "Clean Kitty") tell you nothing.
+        --
+        -- Cards render in batches so a 300-item list does not stall the
+        -- frame, and a render token means a re-Set part way through a
+        -- batch abandons the old run instead of interleaving with it.
+        ------------------------------------------------------------
+
+        function Tab:CreateItemGrid(cfg)
+            cfg = cfg or {}
+            local cell   = cfg.CellSize or Vector2.new(104, 122)
+            local cap    = cfg.MaxCards or 300
+            local batch  = cfg.Batch or 36
+
+            -- Roblox only downloads an image once it is on screen, so
+            -- "still blank" only means anything for a card you can see.
+            local function OnScreen(inst)
+                local size = inst.AbsoluteSize
+                if size.X < 1 or size.Y < 1 then return false end
+                local pos  = inst.AbsolutePosition
+                local view = workspace.CurrentCamera
+                            and workspace.CurrentCamera.ViewportSize
+                            or Vector2.new(1920, 1080)
+                return pos.X + size.X > 0 and pos.X < view.X
+                   and pos.Y + size.Y > 0 and pos.Y < view.Y
+            end
+
+
+            local holder = New("Frame", {
+                Size                   = UDim2.new(1, 0, 0, 0),
+                AutomaticSize          = Enum.AutomaticSize.Y,
+                BackgroundTransparency = 1,
+                LayoutOrder            = NextOrder(),
+                ZIndex                 = 17,
+                Parent                 = page,
+            }, { List(8) })
+
+            local status = New("TextLabel", {
+                Size                   = UDim2.new(1, 0, 0, 15),
+                BackgroundTransparency = 1,
+                Text                   = "",
+                TextColor3             = theme.TextDim,
+                TextSize               = 11,
+                Font                   = Enum.Font.Gotham,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                LayoutOrder            = 1,
+                ZIndex                 = 18,
+                Parent                 = holder,
+            })
+
+            local grid = New("Frame", {
+                Size                   = UDim2.new(1, 0, 0, 0),
+                AutomaticSize          = Enum.AutomaticSize.Y,
+                BackgroundTransparency = 1,
+                LayoutOrder            = 2,
+                ZIndex                 = 18,
+                Parent                 = holder,
+            }, {
+                New("UIGridLayout", {
+                    CellSize            = UDim2.fromOffset(cell.X, cell.Y),
+                    CellPadding         = UDim2.fromOffset(9, 9),
+                    SortOrder           = Enum.SortOrder.LayoutOrder,
+                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
+                }),
+            })
+
+            local api = { Instance = holder }
+
+            local function BuildCard(item, index)
+                local card = New("TextButton", {
+                    Name                   = tostring(item.Name or item.Id or index),
+                    BackgroundColor3       = theme.Surface,
+                    BackgroundTransparency = 0.15,
+                    AutoButtonColor        = false,
+                    Text                   = "",
+                    LayoutOrder            = index,
+                    ClipsDescendants       = true,
+                    ZIndex                 = 19,
+                    Parent                 = grid,
+                }, { Corner(12), Stroke(theme.BorderSoft, 1, 0.4) })
+
+                local art = New("Frame", {
+                    Size                   = UDim2.new(1, -12, 1, -34),
+                    Position               = UDim2.fromOffset(6, 6),
+                    BackgroundColor3       = theme.SurfaceAlt,
+                    BackgroundTransparency = 0.35,
+                    BorderSizePixel        = 0,
+                    ClipsDescendants       = true,
+                    ZIndex                 = 20,
+                    Parent                 = card,
+                }, { Corner(9) })
+
+                -- Letter tile underneath, same reasoning as GameGrid: a
+                -- dead image link shows a deliberate initial instead of a
+                -- hole in the layout.
+                local letter = New("TextLabel", {
+                    Size                   = UDim2.fromScale(1, 1),
+                    BackgroundTransparency = 1,
+                    Text                   = string.upper(string.sub(tostring(item.Name or "?"), 1, 1)),
+                    TextColor3             = theme.TextDim,
+                    TextTransparency       = 0.35,
+                    TextSize               = 26,
+                    Font                   = Enum.Font.GothamBold,
+                    ZIndex                 = 21,
+                    Parent                 = art,
+                })
+
+                if item.Image and item.Image ~= "" then
+                    -- ImageTransparency stays at 0 for the lifetime of this
+                    -- label, and that is not a style choice.
+                    --
+                    -- Roblox will not download a fully transparent image.
+                    -- The old code created the label at transparency 1 and
+                    -- had the fallback set it back to 1 on failure, which
+                    -- meant the "it failed" branch guaranteed it could
+                    -- never succeed: twenty of twenty-five crosshairs sat
+                    -- as dead letters forever, even after scrolling to them.
+                    --
+                    -- So only the LETTER is toggled. An undecoded image
+                    -- draws nothing, so showing both is safe, and the
+                    -- letter simply disappears once the artwork arrives.
+                    local pic = New("ImageLabel", {
+                        Size                   = UDim2.fromScale(1, 1),
+                        BackgroundTransparency = 1,
+                        Image                  = tostring(item.Image),
+                        ImageTransparency      = 0,
+                        ScaleType              = Enum.ScaleType.Fit,
+                        ZIndex                 = 22,
+                        Parent                 = art,
+                    })
+
+                    -- Hidden for the first beat so a fast asset never
+                    -- flashes a placeholder, then shown while we wait.
+                    letter.TextTransparency = 1
+                    task.spawn(function()
+                        local seen, swapped = 0, false
+                        while pic.Parent do
+                            if pic.IsLoaded then
+                                if letter.TextTransparency < 1 then
+                                    Tween(letter, { TextTransparency = 1 }, EASE.Smooth)
+                                end
+                                return
+                            end
+                            local visible = OnScreen(pic)
+                            if visible then
+                                -- Only time spent on screen counts, so a
+                                -- card scrolled to ten minutes from now
+                                -- still gets its full chance.
+                                seen = seen + 0.25
+                                if seen > 0.6 and letter.TextTransparency > 0.9 then
+                                    Tween(letter, { TextTransparency = 0.4 }, EASE.Smooth)
+                                end
+                                -- Visible, requested and still blank: the
+                                -- id is probably not an Image asset. Retry
+                                -- as a thumbnail, which renders models,
+                                -- decals and meshes too.
+                                if not swapped and seen > 1.5 then
+                                    swapped = true
+                                    local id = tostring(pic.Image):match("^rbxassetid://(%d+)$")
+                                    if id then
+                                        pic.Image = "rbxthumb://type=Asset&w=420&h=420&id=" .. id
+                                    end
+                                end
+                                -- Neither form resolved: deleted or
+                                -- moderated. Stop rather than leaving
+                                -- hundreds of coroutines polling forever.
+                                if seen > 20 then return end
+                            end
+                            task.wait(visible and 0.25 or 1)
+                        end
+                    end)
+                end
+
+                New("TextLabel", {
+                    AnchorPoint            = Vector2.new(0, 1),
+                    Position               = UDim2.new(0, 8, 1, -6),
+                    Size                   = UDim2.new(1, -16, 0, 14),
+                    BackgroundTransparency = 1,
+                    Text                   = tostring(item.Name or "?"),
+                    TextColor3             = theme.TextSub,
+                    TextSize               = 11,
+                    Font                   = Enum.Font.GothamMedium,
+                    TextXAlignment         = Enum.TextXAlignment.Left,
+                    TextTruncate           = Enum.TextTruncate.AtEnd,
+                    ZIndex                 = 21,
+                    Parent                 = card,
+                })
+
+                if item.Badge and item.Badge ~= "" then
+                    local badge = New("Frame", {
+                        Position               = UDim2.fromOffset(9, 9),
+                        Size                   = UDim2.fromOffset(0, 15),
+                        AutomaticSize          = Enum.AutomaticSize.X,
+                        BackgroundColor3       = item.BadgeRainbow
+                                                  and Color3.fromRGB(255, 255, 255)
+                                                  or (item.BadgeColor or theme.Accent),
+                        BorderSizePixel        = 0,
+                        ZIndex                 = 24,
+                        Parent                 = card,
+                    }, { Corner(5), Pad(0, 0, 6, 6) })
+
+                    -- A chroma weapon cycles colour in game; a flat label
+                    -- for it would be a lie, so the badge carries the same
+                    -- spectrum.
+                    if item.BadgeRainbow then
+                        Gradient(ColorSequence.new({
+                            ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 108, 108)),
+                            ColorSequenceKeypoint.new(0.30, Color3.fromRGB(255, 214, 122)),
+                            ColorSequenceKeypoint.new(0.62, Color3.fromRGB(122, 238, 190)),
+                            ColorSequenceKeypoint.new(1.00, Color3.fromRGB(168, 150, 255)),
+                        })).Parent = badge
+                    end
+
+                    New("TextLabel", {
+                        Size                   = UDim2.fromOffset(0, 15),
+                        AutomaticSize          = Enum.AutomaticSize.X,
+                        BackgroundTransparency = 1,
+                        Text                   = string.upper(tostring(item.Badge)),
+                        TextColor3             = Color3.fromRGB(18, 18, 22),
+                        TextSize               = 8.5,
+                        Font                   = Enum.Font.GothamBold,
+                        ZIndex                 = 25,
+                        Parent                 = badge,
+                    })
+                end
+
+                local stroke = card:FindFirstChildOfClass("UIStroke")
+                card.MouseEnter:Connect(function()
+                    Tween(card, { BackgroundTransparency = 0 }, EASE.Snap)
+                    if stroke then
+                        Tween(stroke, { Color = theme.Accent, Transparency = 0.1 }, EASE.Snap)
+                    end
+                end)
+                card.MouseLeave:Connect(function()
+                    Tween(card, { BackgroundTransparency = 0.15 }, EASE.Snap)
+                    if stroke then
+                        Tween(stroke, { Color = theme.BorderSoft, Transparency = 0.4 }, EASE.Snap)
+                    end
+                end)
+                card.MouseButton1Click:Connect(function()
+                    Ripple(card, 22)
+                    -- OnSelect matches GameGrid; Callback matches every
+                    -- other control in this library. Both are accepted so
+                    -- neither habit silently does nothing.
+                    local fn = cfg.OnSelect or cfg.Callback
+                    if fn then task.spawn(fn, item.Id or item.Name, item) end
+                end)
+                return card
+            end
+
+            -- Drawing several hundred cards in one frame locks the client,
+            -- so rendering is batched. The token makes a newer Render
+            -- abandon an in-flight one instead of interleaving with it,
+            -- which is what produces duplicated cards when someone types
+            -- quickly into a filter.
+            local token = 0
+            function api:Render(list)
+                list = list or {}
+                token = token + 1
+                local mine = token
+                for _, c in ipairs(grid:GetChildren()) do
+                    if c:IsA("TextButton") then c:Destroy() end
+                end
+                local shown = math.min(#list, cap)
+                status.Text = (#list == 0) and (cfg.Empty or "Nothing matches")
+                    or (#list .. " items" .. (#list > cap and ("  --  showing " .. cap) or ""))
+                task.spawn(function()
+                    for i = 1, shown do
+                        if token ~= mine then return end
+                        BuildCard(list[i], i)
+                        if i % batch == 0 then task.wait() end
+                    end
+                end)
+            end
+
+            api.Set = function(_, list) api:Render(list) end
+            api.Destroy = function() holder:Destroy() end
+            api:Render(cfg.Items)
+            return api
+        end
 
         function Tab:CreateGameGrid(cfg)
             cfg = cfg or {}
@@ -5875,7 +7369,7 @@ function Nely:CreateWindow(opts)
             local full   = "https://discord.gg/" .. invite
 
             local card = New("TextButton", {
-                Size                   = UDim2.new(1, 0, 0, 58),
+                Size                   = UDim2.new(1, 0, 0, 74),
                 BackgroundColor3       = theme.Surface,
                 BackgroundTransparency = 0.15,
                 AutoButtonColor        = false,
@@ -5902,23 +7396,32 @@ function Nely:CreateWindow(opts)
             })
 
             local badge = New("Frame", {
-                Size                   = UDim2.fromOffset(34, 34),
-                Position               = UDim2.new(0, 12, 0.5, 0),
+                Size                   = UDim2.fromOffset(50, 50),
+                Position               = UDim2.new(0, 14, 0.5, 0),
                 AnchorPoint            = Vector2.new(0, 0.5),
                 BackgroundColor3       = theme.Accent,
                 BackgroundTransparency = 0.82,
                 BorderSizePixel        = 0,
                 ZIndex                 = 18,
                 Parent                 = card,
-            }, { Corner(10) })
+            }, { Corner(14) })
 
-            local badgeIcon = Icons.Render("chat", badge, 17, theme.Accent, 19)
+            -- A hub's own mark if it supplies one, the generic bubble if
+            -- not. Icons.Render already leaves raw artwork untinted, so a
+            -- logo keeps its own colours instead of being flattened to the
+            -- accent the way a glyph is.
+            local art  = cfg.Image or cfg.Logo
+            if art and not Icons.IsRawAsset(art) and tostring(art):match("^%d+$") then
+                art = "rbxassetid://" .. art
+            end
+            local badgeIcon = Icons.Render(art or "chat", badge,
+                art and 40 or 24, theme.Accent, 19)
             badgeIcon.Position    = UDim2.fromScale(0.5, 0.5)
             badgeIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 
             New("TextLabel", {
-                Size                   = UDim2.new(1, -130, 0, 16),
-                Position               = UDim2.fromOffset(56, 13),
+                Size                   = UDim2.new(1, -150, 0, 18),
+                Position               = UDim2.fromOffset(76, 20),
                 BackgroundTransparency = 1,
                 Text                   = "Join the Discord",
                 TextColor3             = theme.Text,
@@ -5930,8 +7433,8 @@ function Nely:CreateWindow(opts)
             })
 
             New("TextLabel", {
-                Size                   = UDim2.new(1, -130, 0, 14),
-                Position               = UDim2.fromOffset(56, 30),
+                Size                   = UDim2.new(1, -150, 0, 15),
+                Position               = UDim2.fromOffset(76, 40),
                 BackgroundTransparency = 1,
                 Text                   = pretty,
                 TextColor3             = theme.TextSub,
@@ -6057,7 +7560,7 @@ function Nely:CreateWindow(opts)
             Position               = UDim2.fromOffset(inTopbar and 32 or 26, 0),
             BackgroundTransparency = 1,
             Text                   = "",
-            PlaceholderText        = inTopbar and "Search functions" or "Search",
+            PlaceholderText        = L(inTopbar and "search.functions" or "common.search"),
             PlaceholderColor3      = theme.TextDim,
             TextColor3             = theme.Text,
             TextSize               = inTopbar and 13 or 12,
@@ -6067,6 +7570,8 @@ function Nely:CreateWindow(opts)
             ZIndex                 = inTopbar and 23 or 18,
             Parent                 = wrap,
         })
+        BindText(sBox, "PlaceholderText",
+            inTopbar and "search.functions" or "common.search")
 
         if inTopbar then
             -- Nothing is stacked above the tab list, and the rail has no
@@ -6234,7 +7739,7 @@ function Nely:CreateWindow(opts)
             Position               = UDim2.fromOffset(44, 18),
             BackgroundTransparency = 1,
             Text                   = "",
-            PlaceholderText        = "Jump to anything\u{2026}",
+            PlaceholderText        = L("search.jump"),
             PlaceholderColor3      = theme.TextDim,
             TextColor3             = theme.Text,
             TextSize               = 15,
@@ -6244,6 +7749,7 @@ function Nely:CreateWindow(opts)
             ZIndex                 = 903,
             Parent                 = box,
         })
+        BindText(pBox, "PlaceholderText", "search.jump")
 
         New("TextLabel", {
             Size                   = UDim2.fromOffset(56, 18),
@@ -6662,6 +8168,124 @@ function Nely:CreateWindow(opts)
     end
 
     ----------------------------------------------------------------
+    -- Settings tab (opt in with Settings = true)
+    ----------------------------------------------------------------
+
+    function Window:CreateSettingsTab(cfg)
+        cfg = cfg or {}
+        local tab = Window:CreateTab({
+            Name      = cfg.Name or "Settings",
+            -- LocaleKey rather than a pre-translated Name, so the sidebar
+            -- entry renames itself when the language changes.
+            LocaleKey = (cfg.Name == nil) and "settings.title" or nil,
+            Icon      = cfg.Icon or "settings",
+        })
+
+        tab:CreateSection(nil, "settings.appearance")
+
+        local themeNames = Nely:GetThemes()
+        tab:CreateDropdown({
+            NameKey       = "settings.theme",
+            DescKey       = "settings.desc.theme",
+            Icon          = "palette",
+            Options       = themeNames,
+            CurrentOption = { Nely.ThemeName or "Metallic" },
+            Callback      = function(choice)
+                local name = type(choice) == "table" and choice[1] or choice
+                if name then Nely:SetTheme(name) end
+            end,
+        })
+
+        -- Language names stay in their own language on purpose: someone
+        -- looking for Russian scans for "Русский", not for whatever the
+        -- current interface calls it.
+        local langNames, byName = {}, {}
+        for _, entry in ipairs(Nely.Languages) do
+            table.insert(langNames, entry.Name)
+            byName[entry.Name] = entry.Code
+        end
+        local currentLang = "English"
+        for _, entry in ipairs(Nely.Languages) do
+            if entry.Code == Nely.Language then currentLang = entry.Name end
+        end
+
+        tab:CreateDropdown({
+            NameKey       = "settings.language",
+            DescKey       = "settings.desc.language",
+            Icon          = "languages",
+            Options       = langNames,
+            CurrentOption = { currentLang },
+            Callback      = function(choice)
+                local name = type(choice) == "table" and choice[1] or choice
+                local code = byName[name]
+                if code then Nely:SetLanguage(code) end
+            end,
+        })
+
+        tab:CreateSlider({
+            NameKey      = "settings.transparency",
+            Icon         = "layers",
+            -- 40 was not enough to reach glass. 85 lets the window go
+            -- almost fully see-through while the border and text stay,
+            -- which is the point of the setting.
+            Range        = { 0, 85 },
+            Increment    = 5,
+            CurrentValue = math.floor((glass or 0.14) * 100),
+            Suffix       = "%",
+            Callback     = function(value) Window:SetTransparency(value / 100) end,
+        })
+
+        -- Was "Background blur". There is no blur any more, so this slot
+        -- carries the switch people will actually reach for.
+        tab:CreateToggle({
+            NameKey      = "settings.colored",
+            DescKey      = "settings.desc.colored",
+            Icon         = "palette",
+            CurrentValue = Nely.ColoredUI == true,
+            Callback     = function(state) Nely:SetColoredUI(state) end,
+        })
+
+        tab:CreateSection(nil, "settings.interface")
+
+        tab:CreateToggle({
+            NameKey      = "settings.cursor",
+            DescKey      = "settings.desc.cursor",
+            Icon         = "mouse-pointer-2",
+            CurrentValue = Cursor and Cursor.Enabled ~= false,
+            Callback     = function(state)
+                if Cursor then Cursor.Enabled = state end
+            end,
+        })
+
+        tab:CreateToggle({
+            NameKey      = "settings.notifications",
+            DescKey      = "settings.desc.notifs",
+            Icon         = "bell",
+            CurrentValue = Nely.NotificationsEnabled ~= false,
+            Callback     = function(state) Nely.NotificationsEnabled = state end,
+        })
+
+        tab:CreateKeybind({
+            NameKey     = "settings.toggle_key",
+            Icon        = "keyboard",
+            CurrentBind = tostring(toggleKey and toggleKey.Name or "RightShift"),
+            OnChanged   = function(key) if key then toggleKey = key end end,
+        })
+
+        return tab
+    end
+
+    if opts.Settings == true then
+        -- Deferred so a hub that creates its own tabs immediately after
+        -- CreateWindow still gets them in its own order, with Settings last.
+        task.defer(function()
+            if not Window.Destroyed then
+                pcall(function() Window:CreateSettingsTab() end)
+            end
+        end)
+    end
+
+    ----------------------------------------------------------------
     -- Loading screen
     ----------------------------------------------------------------
 
@@ -6804,7 +8428,7 @@ function Nely:CreateWindow(opts)
             Size                   = UDim2.new(1, 0, 0, 14),
             Position               = UDim2.fromOffset(0, 141),
             BackgroundTransparency = 1,
-            Text                   = opts.LoadingSubtitle or "Starting up",
+            Text                   = opts.LoadingSubtitle or L("loading.starting"),
             TextColor3             = theme.TextDim,
             TextSize               = 11,
             Font                   = Enum.Font.Gotham,
@@ -6860,7 +8484,6 @@ function Nely:CreateWindow(opts)
         ------------------------------------------------------------
 
         Tween(splashScale, { Scale = 1 }, EASE.Spring)
-        Tween(Blur, { Size = 16 }, EASE.Glide)
 
         local duration = opts.LoadingTime or 1.6
         local started  = os.clock()
@@ -6881,13 +8504,13 @@ function Nely:CreateWindow(opts)
             percent.Text = math.floor(eased * 100) .. "%"
 
             if progress < 0.34 then
-                status.Text = Icons.Loaded and "Icons ready" or "Loading icons"
+                status.Text = L(Icons.Loaded and "loading.icons_ready" or "loading.icons")
             elseif progress < 0.72 then
-                status.Text = "Building interface"
+                status.Text = L("loading.building")
             elseif progress < 1 then
-                status.Text = "Almost there"
+                status.Text = L("loading.almost")
             else
-                status.Text = "Ready"
+                status.Text = L("loading.ready")
             end
         end)
         table.insert(Nely.Connections, spin)
@@ -7063,7 +8686,7 @@ function Nely:KeySystem(opts)
         Position               = UDim2.fromOffset(10, 0),
         BackgroundTransparency = 1,
         Text                   = "",
-        PlaceholderText        = opts.Placeholder or "Paste your key",
+        PlaceholderText        = opts.Placeholder or L("keysystem.placeholder"),
         PlaceholderColor3      = theme.TextDim,
         TextColor3             = theme.Text,
         TextSize               = 13,
@@ -7108,13 +8731,13 @@ function Nely:KeySystem(opts)
     end
 
     if opts.GetKeyUrl then
-        local getBtn = MakeButton("Get key", false, 1)
+        local getBtn = MakeButton(L("keysystem.get_key"), false, 1)
         getBtn.MouseButton1Click:Connect(function()
             local copy = setclipboard or toclipboard or (syn and syn.write_clipboard)
             if copy then
                 copy(opts.GetKeyUrl)
                 getBtn.Text = "Link copied"
-                task.delay(2, function() getBtn.Text = "Get key" end)
+                task.delay(2, function() getBtn.Text = L("keysystem.get_key") end)
             end
         end)
     end
@@ -7165,7 +8788,6 @@ function Nely:KeySystem(opts)
     card.Size = UDim2.fromOffset(300, 0)
     Tween(overlay, { BackgroundTransparency = 0.4 }, EASE.Smooth)
     Tween(card, { Size = UDim2.fromOffset(320, 0) }, EASE.Pop)
-    Tween(Blur, { Size = 12 }, EASE.Glide)
 
     repeat task.wait(0.1) until resolved
     return granted
@@ -7176,69 +8798,35 @@ end
 --==================================================================
 
 function Nely:SetTheme(name)
-    local newTheme = Nely.Themes[name]
+    local newTheme, canonical = ResolveTheme(name)
     if not newTheme then return false end
+    Nely.ThemeName = canonical or Nely.ThemeName
+    -- Accent-bearing controls repaint from the new theme once the swap
+    -- below has finished; see the deferred call at the end of this
+    -- function. Registered controls are the reason an existing toggle
+    -- follows a theme change instead of keeping the old colour.
     local oldTheme = Nely.Theme
     if newTheme == oldTheme then return true end
 
     -- Every colour already painted came from a slot in the old theme, so a
     -- reverse lookup on the old palette tells us which slot any given colour
     -- belongs to. That means no element has to register itself up front.
-    local function Key(color)
-        return ("%d|%d|%d"):format(
-            math.round(color.R * 255),
-            math.round(color.G * 255),
-            math.round(color.B * 255)
-        )
+    -- ResolveTheme has already masked newTheme, so with Colored UI off both
+    -- palettes carry the same platinum accents and those entries are a
+    -- no-op -- which is the point: the accents must not follow the theme
+    -- while the switch is off.
+    local map = {}
+    for slot, colour in pairs(oldTheme) do
+        if newTheme[slot] then map[ColorKey(colour)] = newTheme[slot] end
     end
-
-    local slotOf = {}
-    for slot, color in pairs(oldTheme) do
-        slotOf[Key(color)] = slot
-    end
-
-    local function Translate(color)
-        local slot = slotOf[Key(color)]
-        return slot and newTheme[slot] or nil
-    end
-
-    local function Swap(inst, prop)
-        local swapped = Translate(inst[prop])
-        if swapped then inst[prop] = swapped end
-    end
-
-    for _, inst in ipairs(Root:GetDescendants()) do
-        if inst:IsA("GuiObject") then
-            Swap(inst, "BackgroundColor3")
-        end
-        if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
-            Swap(inst, "TextColor3")
-        end
-        if inst:IsA("TextBox") then
-            Swap(inst, "PlaceholderColor3")
-        end
-        if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
-            Swap(inst, "ImageColor3")
-        end
-        if inst:IsA("ScrollingFrame") then
-            Swap(inst, "ScrollBarImageColor3")
-        end
-        if inst:IsA("UIStroke") then
-            Swap(inst, "Color")
-        end
-        if inst:IsA("UIGradient") then
-            local points, changed = {}, false
-            for _, keypoint in ipairs(inst.Color.Keypoints) do
-                local swapped = Translate(keypoint.Value)
-                if swapped then changed = true end
-                table.insert(points,
-                    ColorSequenceKeypoint.new(keypoint.Time, swapped or keypoint.Value))
-            end
-            if changed then inst.Color = ColorSequence.new(points) end
-        end
-    end
+    TranslateTree(map)
 
     Nely.Theme = newTheme
+
+    -- Registered controls repaint from the new palette. This is what makes
+    -- an already-created toggle or sidebar icon follow a theme change
+    -- rather than keeping whatever it was built with.
+    RepaintAccents()
     return true
 end
 
