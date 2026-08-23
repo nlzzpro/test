@@ -489,21 +489,40 @@ end
 
 -- Always returns a container so callers never have to nil-check and
 -- layouts hold their shape even when the pack fails to download.
+-- V4: every icon slot in the library also accepts a raw asset, so
+-- anywhere you can name a lucide glyph you can hand over a picture
+-- instead -- an item thumbnail, a game logo, a weapon skin.
+--
+-- Passed-through art keeps its own colours. A glyph is a silhouette meant
+-- to be tinted; a photograph tinted to the accent colour just looks
+-- broken, so raw images are flagged and the tinting skips them.
+local function IsRawAsset(name)
+    return type(name) == "string"
+       and (string.sub(name, 1, 13) == "rbxassetid://"
+         or string.sub(name, 1, 10) == "rbxthumb://"
+         or string.sub(name, 1, 11) == "rbxasset://"
+         or string.sub(name, 1, 4)  == "http")
+end
+Icons.IsRawAsset = IsRawAsset
+
 function Icons.Render(name, parent, size, color, zindex)
-    return New("ImageLabel", {
+    local raw = IsRawAsset(name)
+    local img = New("ImageLabel", {
         Name                   = "Icon",
         Size                   = UDim2.fromOffset(size, size),
         BackgroundTransparency = 1,
-        Image                  = Icons.Asset(name) or "",
-        ImageColor3            = color,
+        Image                  = raw and name or (Icons.Asset(name) or ""),
+        ImageColor3            = raw and Color3.fromRGB(255, 255, 255) or color,
         ScaleType              = Enum.ScaleType.Fit,
         ZIndex                 = zindex or (parent.ZIndex + 1),
         Parent                 = parent,
     })
+    if raw then img:SetAttribute("RawArt", true) end
+    return img
 end
 
 local function TintIcon(icon, color)
-    if icon and icon:IsA("ImageLabel") then
+    if icon and icon:IsA("ImageLabel") and not icon:GetAttribute("RawArt") then
         Tween(icon, { ImageColor3 = color }, EASE.Snap)
     end
 end
@@ -1734,13 +1753,26 @@ function Nely:CreateWindow(opts)
     -- Shell
     ----------------------------------------------------------------
 
+    -- V4 glass shell.
+    --
+    -- Roblox has no backdrop blur for GUI, so "glass" is built out of what
+    -- it does have: a translucent base so the game reads through, a
+    -- diagonal accent wash for depth, and a one pixel top highlight that
+    -- catches the eye the way a lit edge does. Three cheap layers beat one
+    -- flat panel, and none of them cost a frame of work to maintain.
+    --
+    -- Glass = 0 gives the old opaque look; the default leans translucent.
+    local glass = opts.Glass
+    if glass == nil then glass = 0.10 end
+    if opts.Transparent == false then glass = 0 end
+
     local shell = New("Frame", {
         Name             = "Window",
         Size             = winSize,
         Position         = UDim2.fromScale(0.5, 0.5),
         AnchorPoint      = Vector2.new(0.5, 0.5),
         BackgroundColor3 = theme.Backdrop,
-        BackgroundTransparency = opts.Transparent == false and 0 or 0.04,
+        BackgroundTransparency = glass,
         BorderSizePixel  = 0,
         -- must stay false: the shadow lives inside the shell and would be clipped away.
         -- the content frame does its own clipping for page transitions.
@@ -1748,27 +1780,71 @@ function Nely:CreateWindow(opts)
         ZIndex           = 10,
         Parent           = Root,
     }, {
-        Corner(16),
-        Stroke(theme.Border, 1, 0.3),
+        Corner(18),
+        Stroke(theme.Border, 1, 0.15),
     })
-    Shadow(shell, 30, 0.65, 16)
+    Shadow(shell, 42, 0.72, 18)
     Window.Frame = shell
 
-    -- Ambient accent wash behind everything
+    -- Layer 1: diagonal accent wash, strongest at the top left corner so
+    -- the window reads as lit from one side rather than evenly filled.
     New("Frame", {
+        Name                   = "Wash",
         Size                   = UDim2.fromScale(1, 1),
         BackgroundColor3       = theme.Accent,
-        BackgroundTransparency = 0.955,
+        BackgroundTransparency = 0.93,
         BorderSizePixel        = 0,
         ZIndex                 = 10,
         Parent                 = shell,
     }, {
-        Corner(16),
+        Corner(18),
         Gradient(ColorSequence.new({
             ColorSequenceKeypoint.new(0, theme.Accent),
-            ColorSequenceKeypoint.new(0.55, theme.Backdrop),
+            ColorSequenceKeypoint.new(0.45, theme.Backdrop),
             ColorSequenceKeypoint.new(1, theme.Backdrop),
-        }), 145),
+        }), 135),
+    })
+
+    -- Layer 2: vertical depth, darkening toward the bottom so content
+    -- sitting low on the page still separates from the edge.
+    New("Frame", {
+        Name                   = "Depth",
+        Size                   = UDim2.fromScale(1, 1),
+        BackgroundColor3       = Color3.fromRGB(0, 0, 0),
+        BackgroundTransparency = 0.88,
+        BorderSizePixel        = 0,
+        ZIndex                 = 10,
+        Parent                 = shell,
+    }, {
+        Corner(18),
+        New("UIGradient", {
+            Rotation = 90,
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 1),
+                NumberSequenceKeypoint.new(0.6, 0.92),
+                NumberSequenceKeypoint.new(1, 0.72),
+            }),
+        }),
+    })
+
+    -- Layer 3: the lit top edge. One pixel, fading out toward the sides.
+    New("Frame", {
+        Name                   = "Sheen",
+        Size                   = UDim2.new(1, -36, 0, 1),
+        Position               = UDim2.new(0, 18, 0, 1),
+        BackgroundColor3       = Color3.fromRGB(255, 255, 255),
+        BackgroundTransparency = 0.75,
+        BorderSizePixel        = 0,
+        ZIndex                 = 21,
+        Parent                 = shell,
+    }, {
+        New("UIGradient", {
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 1),
+                NumberSequenceKeypoint.new(0.5, 0),
+                NumberSequenceKeypoint.new(1, 1),
+            }),
+        }),
     })
 
     ----------------------------------------------------------------
@@ -2935,14 +3011,27 @@ function Nely:CreateWindow(opts)
     -- Tabs
     ----------------------------------------------------------------
 
+    -- V4 tab hues.
+    --
+    -- A sidebar of identically grey glyphs gives the eye nothing to aim
+    -- at, so every tab gets its own colour. Pass IconColor to choose, or
+    -- let this walk the hue wheel by golden ratio, which spaces any number
+    -- of tabs apart without two ever landing on the same colour. Value and
+    -- saturation stay fixed so nothing shouts louder than its neighbours.
+    local function AutoHue(index)
+        local hue = ((index - 1) * 0.618033988749895) % 1
+        return Color3.fromHSV(hue, 0.55, 1)
+    end
+
     function Window:CreateTab(tabOpts)
         tabOpts = tabOpts or {}
         Window._tabOrder = Window._tabOrder + 1
-        local order    = Window._tabOrder
-        local tabName  = tabOpts.Name or ("Tab " .. order)
-        local iconName = tabOpts.Icon or "layers"
+        local order     = Window._tabOrder
+        local tabName   = tabOpts.Name or ("Tab " .. order)
+        local iconName  = tabOpts.Icon or "layers"
+        local iconColor = tabOpts.IconColor or AutoHue(order)
 
-        local Tab = { Name = tabName, Sections = {} }
+        local Tab = { Name = tabName, Sections = {}, IconColor = iconColor }
 
         -- sidebar button
         local btn = New("TextButton", {
@@ -2966,15 +3055,21 @@ function Nely:CreateWindow(opts)
             Size                   = UDim2.fromOffset(3, 0),
             Position               = UDim2.new(0, 0, 0.5, 0),
             AnchorPoint            = Vector2.new(0, 0.5),
-            BackgroundColor3       = theme.Accent,
+            -- Marker matches the tab's own hue, so the active rail and the
+            -- active glyph are visibly the same object.
+            BackgroundColor3       = iconColor,
             BorderSizePixel        = 0,
             ZIndex                 = 19,
             Parent                 = btn,
         }, { Corner(2) })
 
-        local icon = Icons.Render(iconName, btn, 16, theme.TextDim, 18)
-        icon.Position    = UDim2.new(0, 13, 0.5, 0)
-        icon.AnchorPoint = Vector2.new(0, 0.5)
+        -- The glyph carries its hue whether the tab is selected or not;
+        -- selection is expressed by opacity, not by draining the colour
+        -- out. An inactive sidebar still reads as a set of colours.
+        local icon = Icons.Render(iconName, btn, 16, iconColor, 18)
+        icon.Position          = UDim2.new(0, 13, 0.5, 0)
+        icon.AnchorPoint       = Vector2.new(0, 0.5)
+        icon.ImageTransparency = 0.42
 
         local label = New("TextLabel", {
             Size                   = UDim2.new(1, -44, 1, 0),
@@ -2989,6 +3084,43 @@ function Nely:CreateWindow(opts)
             ZIndex                 = 18,
             Parent                 = btn,
         })
+
+        -- Optional tag chip, right aligned in the row. Onyx uses these to
+        -- flag NEW and BETA; anything short works. TagColor defaults to
+        -- the tab's own hue so a tagged tab reads as one object.
+        local tagChip
+        if tabOpts.Tag and tabOpts.Tag ~= "" then
+            local tagColor = tabOpts.TagColor or iconColor
+            tagChip = New("Frame", {
+                Name                   = "Tag",
+                AnchorPoint            = Vector2.new(1, 0.5),
+                Position               = UDim2.new(1, -10, 0.5, 0),
+                Size                   = UDim2.fromOffset(0, 16),
+                AutomaticSize          = Enum.AutomaticSize.X,
+                BackgroundColor3       = tagColor,
+                BackgroundTransparency = 0.8,
+                BorderSizePixel        = 0,
+                ZIndex                 = 19,
+                Parent                 = btn,
+            }, {
+                Corner(5),
+                Stroke(tagColor, 1, 0.55),
+                Pad(0, 0, 6, 6),
+                New("TextLabel", {
+                    Size                   = UDim2.fromOffset(0, 16),
+                    AutomaticSize          = Enum.AutomaticSize.X,
+                    BackgroundTransparency = 1,
+                    Text                   = string.upper(tostring(tabOpts.Tag)),
+                    TextColor3             = tagColor,
+                    TextSize               = 9,
+                    Font                   = Enum.Font.GothamBold,
+                    ZIndex                 = 20,
+                }),
+            })
+            -- The label must not run underneath the chip.
+            label.Size = UDim2.new(1, -96, 1, 0)
+        end
+        Tab._tag = tagChip
 
         -- page
         local page = New("ScrollingFrame", {
@@ -3028,7 +3160,12 @@ function Nely:CreateWindow(opts)
                 Tween(other._label, {
                     TextColor3 = active and theme.Text or theme.TextDim,
                 }, EASE.Snap)
-                TintIcon(other._icon, active and theme.Accent or theme.TextDim)
+                -- Selection changes the glyph's opacity, not its hue, so
+                -- the sidebar keeps reading as a set of colours.
+                TintIcon(other._icon, other.IconColor or theme.Accent)
+                Tween(other._icon, {
+                    ImageTransparency = active and 0 or 0.42,
+                }, EASE.Snap)
                 Tween(other._marker, {
                     Size = UDim2.fromOffset(3, active and 20 or 0),
                 }, EASE.Glide)
@@ -4084,9 +4221,17 @@ function Nely:CreateWindow(opts)
                     if child:IsA("TextButton") then child:Destroy() end
                 end
                 entries = {}
+                -- V4: an option can carry a picture. Pass OptionIcons as
+                -- {[optionText] = "rbxassetid://..."} and the row grows a
+                -- thumbnail. Picking a skin by name is guesswork; picking
+                -- it by its picture is not. Rows without an entry in the
+                -- map keep the plain layout, so a partly illustrated list
+                -- still lines up.
+                local icons  = cfg.OptionIcons
+                local rowH   = icons and 34 or 30
                 for index, opt in ipairs(options) do
                     local entry = New("TextButton", {
-                        Size                   = UDim2.new(1, 0, 0, 30),
+                        Size                   = UDim2.new(1, 0, 0, rowH),
                         BackgroundColor3       = theme.Elevated,
                         BackgroundTransparency = 0.35,
                         AutoButtonColor        = false,
@@ -4096,15 +4241,34 @@ function Nely:CreateWindow(opts)
                         Parent                 = optionHost,
                     }, { Corner(8) })
 
+                    local textX = 11
+                    local art   = icons and icons[opt]
+                    if art then
+                        New("ImageLabel", {
+                            Name                   = "Thumb",
+                            Size                   = UDim2.fromOffset(22, 22),
+                            Position               = UDim2.new(0, 8, 0.5, 0),
+                            AnchorPoint            = Vector2.new(0, 0.5),
+                            BackgroundColor3       = theme.Base,
+                            BackgroundTransparency = 0.4,
+                            Image                  = art,
+                            ScaleType              = Enum.ScaleType.Fit,
+                            ZIndex                 = 20,
+                            Parent                 = entry,
+                        }, { Corner(6) })
+                        textX = 38
+                    end
+
                     local label = New("TextLabel", {
-                        Size                   = UDim2.new(1, -40, 1, 0),
-                        Position               = UDim2.fromOffset(11, 0),
+                        Size                   = UDim2.new(1, -(textX + 29), 1, 0),
+                        Position               = UDim2.fromOffset(textX, 0),
                         BackgroundTransparency = 1,
                         Text                   = opt,
                         TextColor3             = theme.TextSub,
                         TextSize               = 12,
                         Font                   = Enum.Font.Gotham,
                         TextXAlignment         = Enum.TextXAlignment.Left,
+                        TextTruncate           = Enum.TextTruncate.AtEnd,
                         ZIndex                 = 20,
                         Parent                 = entry,
                     })
