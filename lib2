@@ -240,7 +240,169 @@ do
     Nely.Themes.Onyx.Surface  = Color3.fromRGB(16, 16, 18)
 end
 
-Nely.Theme = Nely.Themes.Graphite
+--------------------------------------------------------------------
+--  NELY METALLIC  --  the branded default
+--
+--  Built around the logo rather than beside it. The logo is a brushed
+--  grey mark, so the shell is a true neutral charcoal with a faint cool
+--  cast, and the accent is platinum -- the same material as the mark,
+--  one step off white.
+--
+--  The reason this is its own theme and not just "Graphite with a
+--  different name": a brand theme needs the highlight and the metal
+--  tokens to be *related* to the accent, so the sheen on a hovered
+--  control looks like light moving across the same metal the logo is
+--  made of. Graphite stays exactly as it was for anyone naming it.
+--------------------------------------------------------------------
+
+Nely.Themes.Metallic = {
+    Backdrop    = Color3.fromRGB(12, 12, 14),
+    Surface     = Color3.fromRGB(19, 20, 23),
+    SurfaceAlt  = Color3.fromRGB(26, 27, 31),
+    Elevated    = Color3.fromRGB(35, 36, 42),
+    Hover       = Color3.fromRGB(46, 48, 55),
+    Border      = Color3.fromRGB(60, 62, 71),
+    BorderSoft  = Color3.fromRGB(32, 33, 39),
+    -- Platinum. Cool enough to read as steel, warm enough not to look
+    -- like an unstyled white.
+    Accent      = Color3.fromRGB(211, 216, 227),
+    AccentSoft  = Color3.fromRGB(242, 245, 251),
+    AccentDeep  = Color3.fromRGB(132, 138, 152),
+    Text        = Color3.fromRGB(243, 244, 248),
+    TextSub     = Color3.fromRGB(163, 168, 179),
+    TextDim     = Color3.fromRGB(104, 109, 122),
+    Success     = Color3.fromRGB(92, 206, 137),
+    Danger      = Color3.fromRGB(237, 102, 106),
+    Warning     = Color3.fromRGB(233, 182, 90),
+    -- Brand-specific. The normalizer below derives these for every other
+    -- theme; Metallic states them so the sheen is hand-tuned.
+    Sheen       = Color3.fromRGB(250, 251, 255),
+    Metal       = Color3.fromRGB(178, 184, 196),
+    MetalDeep   = Color3.fromRGB( 88,  93, 104),
+}
+
+-- Names people may already be passing. Aliases rather than copies, so a
+-- theme edited at runtime stays consistent under every name it answers to.
+Nely.ThemeAliases = {
+    ["Nely Metallic"] = "Metallic",
+    ["Nely"]          = "Metallic",
+    ["Platinum"]      = "Metallic",
+    ["Default"]       = "Metallic",
+    ["Gray"]          = "Graphite",
+    ["Grey"]          = "Graphite",
+}
+
+--------------------------------------------------------------------
+--  TOKEN NORMALIZER
+--
+--  The binder resolves colours by semantic name, which only works if
+--  every theme answers to every name. Themes in the wild -- including
+--  ones hub authors define with four slots -- do not.
+--
+--  So each theme is completed here: the extra tokens are DERIVED from
+--  the ramp it already has, rather than defaulted to some fixed grey
+--  that would look wrong on a warm or a light palette. A theme still
+--  only has to define the classic slots; it gets the rest for free and
+--  in its own colour.
+--------------------------------------------------------------------
+
+local function Mix(a, b, t) return a:Lerp(b, t) end
+
+local function Luma(c)
+    return c.R * 0.299 + c.G * 0.587 + c.B * 0.114
+end
+
+local function CompleteTheme(theme)
+    if type(theme) ~= "table" then return theme end
+
+    local backdrop = theme.Backdrop   or Color3.fromRGB(13, 13, 15)
+    local surface  = theme.Surface    or Mix(backdrop, Color3.new(1,1,1), 0.05)
+    local accent   = theme.Accent     or Color3.fromRGB(200, 204, 214)
+    local text     = theme.Text       or Color3.fromRGB(240, 240, 244)
+    local light    = Luma(backdrop) > 0.5   -- a light theme inverts the lifts
+
+    local function default(slot, value)
+        if theme[slot] == nil then theme[slot] = value end
+    end
+
+    -- Structure
+    default("SurfaceAlt", Mix(surface, light and Color3.new(0,0,0) or Color3.new(1,1,1), 0.05))
+    default("Elevated",   Mix(surface, light and Color3.new(0,0,0) or Color3.new(1,1,1), 0.10))
+    default("Hover",      Mix(theme.Elevated, light and Color3.new(0,0,0) or Color3.new(1,1,1), 0.08))
+    default("Border",     Mix(theme.Elevated, text, 0.18))
+    default("BorderSoft", Mix(surface, text, 0.07))
+
+    -- Accent family
+    default("AccentSoft", Mix(accent, Color3.new(1, 1, 1), 0.35))
+    default("AccentDeep", Mix(accent, Color3.new(0, 0, 0), 0.35))
+
+    -- Text ramp
+    default("TextSub", Mix(text, backdrop, 0.38))
+    default("TextDim", Mix(text, backdrop, 0.60))
+
+    -- Status
+    default("Success", Color3.fromRGB(92, 206, 137))
+    default("Danger",  Color3.fromRGB(237, 102, 106))
+    default("Warning", Color3.fromRGB(233, 182, 90))
+    default("Info",    theme.Accent)
+
+    -- Derived surfaces the v4 components bind against.
+    default("Sidebar",   Mix(backdrop, surface, 0.45))
+    default("Topbar",    Mix(surface, backdrop, 0.30))
+    default("Divider",   theme.BorderSoft)
+    default("Overlay",   Mix(backdrop, Color3.new(0, 0, 0), 0.35))
+    default("Shadow",    Color3.fromRGB(0, 0, 0))
+    -- A wash is the accent at ~8% over the surface: enough to say
+    -- "selected" without turning the row into a coloured block.
+    default("Wash",      Mix(surface, accent, 0.08))
+    default("Selection", Mix(surface, accent, 0.16))
+    default("Track",     Mix(surface, text, 0.10))
+    default("Knob",      text)
+    default("Sheen",     Mix(accent, Color3.new(1, 1, 1), 0.55))
+    default("Metal",     Mix(accent, backdrop, 0.22))
+    default("MetalDeep", Mix(accent, backdrop, 0.55))
+    default("Placeholder", theme.TextDim)
+    default("Disabled",    Mix(theme.TextDim, backdrop, 0.35))
+
+    return theme
+end
+Nely.CompleteTheme = CompleteTheme
+
+for _, theme in pairs(Nely.Themes) do CompleteTheme(theme) end
+
+-- Resolve a theme by name, honouring aliases and ignoring case so
+-- "metallic", "Metallic" and "Nely Metallic" all land in the same place.
+-- Returns the theme AND its canonical name. The second return value
+-- matters more than it looks: Nely.ThemeName is what the Settings
+-- dropdown highlights and what gets written to preferences, so storing
+-- the alias the caller happened to type ("Nely Metallic") would leave the
+-- dropdown with nothing selected and the saved preference unresolvable
+-- against Nely:GetThemes().
+local function ResolveTheme(name)
+    if type(name) == "table" then return CompleteTheme(name), nil end
+    if type(name) ~= "string" then return nil, nil end
+
+    local direct = Nely.Themes[name]
+    if direct then return direct, name end
+
+    local alias = Nely.ThemeAliases[name]
+    if alias and Nely.Themes[alias] then return Nely.Themes[alias], alias end
+
+    local lower = string.lower(name)
+    for key, theme in pairs(Nely.Themes) do
+        if string.lower(key) == lower then return theme, key end
+    end
+    for key, target in pairs(Nely.ThemeAliases) do
+        if string.lower(key) == lower and Nely.Themes[target] then
+            return Nely.Themes[target], target
+        end
+    end
+    return nil, nil
+end
+Nely.ResolveTheme = ResolveTheme
+
+Nely.Theme     = Nely.Themes.Metallic
+Nely.ThemeName = "Metallic"
 
 --------------------------------------------------------------------
 --  CUSTOM THEMES
@@ -250,13 +412,35 @@ Nely.Theme = Nely.Themes.Graphite
 --  to change the accent colour.
 --------------------------------------------------------------------
 
+-- Slots CompleteTheme derives. They are deliberately NOT inherited from
+-- the base theme: if you say Base = "Cobalt" and then hand me a red
+-- accent, you want a red wash and a red sheen, not Cobalt's blue ones
+-- surviving underneath your accent. Dropping them here forces a fresh
+-- derivation from whatever ramp the finished theme actually has.
+-- The palette as it existed before v4. This is the contract the
+-- reverse-lookup compatibility pass honours; see Nely:SetTheme.
+local CLASSIC_SLOTS = {
+    "Backdrop", "Surface", "SurfaceAlt", "Elevated", "Hover",
+    "Border", "BorderSoft", "Accent", "AccentSoft", "AccentDeep",
+    "Text", "TextSub", "TextDim", "Success", "Danger", "Warning",
+}
+
+local DERIVED_SLOTS = {
+    Sidebar = true, Topbar = true, Divider = true, Overlay = true,
+    Shadow  = true, Wash   = true, Selection = true, Track = true,
+    Knob    = true, Sheen  = true, Metal  = true, MetalDeep = true,
+    Placeholder = true, Disabled = true, Info = true,
+}
+
 function Nely:AddTheme(spec)
     assert(type(spec) == "table" and spec.Name, "AddTheme needs a table with a Name")
 
-    local base = Nely.Themes[spec.Base or "Cobalt"] or Nely.Themes.Cobalt
+    local base = ResolveTheme(spec.Base or "Cobalt") or Nely.Themes.Cobalt
     local theme = {}
     for slot, color in pairs(base) do
-        theme[slot] = color
+        if not DERIVED_SLOTS[slot] then
+            theme[slot] = color
+        end
     end
     for slot, color in pairs(spec) do
         if slot ~= "Name" and slot ~= "Base" and typeof(color) == "Color3" then
@@ -264,6 +448,7 @@ function Nely:AddTheme(spec)
         end
     end
 
+    CompleteTheme(theme)
     Nely.Themes[spec.Name] = theme
     return theme
 end
@@ -278,32 +463,489 @@ function Nely:GetThemes()
 end
 
 --==================================================================
---  ANIMATION PRESETS
+--  DESIGN TOKENS
+--
+--  One place for the numbers that used to be scattered as literals. A
+--  component asking for Design.Radius.MD instead of 11 means the whole
+--  library re-proportions from a single edit, and a reviewer can see at a
+--  glance whether a value was chosen or typed.
 --==================================================================
 
-local EASE = {
-    Instant = TweenInfo.new(0.10, Enum.EasingStyle.Quad,  Enum.EasingDirection.Out),
-    Snap    = TweenInfo.new(0.16, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-    Smooth  = TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
-    Glide   = TweenInfo.new(0.42, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
-    Pop     = TweenInfo.new(0.38, Enum.EasingStyle.Back,  Enum.EasingDirection.Out),
+Nely.Design = {
+    Spacing = { XS = 4, SM = 6, MD = 10, LG = 14, XL = 20, XXL = 28 },
+    Radius  = { SM = 6, MD = 10, LG = 14, Pill = 999, Window = 18 },
+    Stroke  = { Hair = 1, Thin = 1, Thick = 2 },
 
-    -- Back/In anticipates before it collapses: the window swells a hair,
-    -- then drops away. Reads as an object leaving rather than a frame
-    -- being switched off.
-    Collapse = TweenInfo.new(0.30, Enum.EasingStyle.Back, Enum.EasingDirection.In),
-    -- A longer, softer Pop for the things that should feel weighty:
-    -- the window arriving, the orb landing.
-    Spring   = TweenInfo.new(0.46, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-    -- Straight-line travel, for anything flying between two points where
-    -- an ease would read as drag.
-    Fly      = TweenInfo.new(0.34, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut),
+    -- Interaction sizes. Touch minimums come from the platform guidance
+    -- everyone converged on (~44px); desktop can be tighter because a
+    -- pointer is precise in a way a thumb is not.
+    Control = { Desktop = 38, Compact = 42, Mobile = 46 },
+    Touch   = { Min = 44 },
+
+    Text = {
+        HubTitle = 16, PageTitle = 15, Section = 11,
+        Control  = 13, Body = 12, Meta = 11, Code = 12,
+    },
+
+    Transparency = {
+        Shell = 0.06, Sidebar = 0.35, Surface = 0.28,
+        Elevated = 0.18, Wash = 0.93,
+    },
+
+    -- Breakpoints, named rather than compared inline so the rules are
+    -- auditable in one spot.
+    Breakpoint = { Mobile = 620, Compact = 900 },
+}
+local Design = Nely.Design
+
+--==================================================================
+--  MOTION
+--
+--  Central motion configuration plus a tween registry.
+--
+--  The old helper created a tween per call and forgot about it, so a
+--  control clicked twice quickly ended up with two tweens driving the
+--  same property in opposite directions and the loser won at random.
+--  Every animation now goes through Motion.Tween, which cancels any
+--  in-flight tween on the same instance+property before starting the new
+--  one. Newest intent always wins.
+--
+--  Durations derive from Motion settings rather than being multiplied at
+--  each call site, so AnimationSpeed and ReduceMotion take effect
+--  everywhere at once.
+--==================================================================
+
+Nely.Motion = {
+    Enabled      = true,
+    Speed        = 1,      -- >1 faster, <1 slower
+    ReduceMotion = false,
+}
+local Motion = Nely.Motion
+
+local BASE_EASE = {
+    Instant  = { 0.10, Enum.EasingStyle.Quad,        Enum.EasingDirection.Out },
+    Snap     = { 0.16, Enum.EasingStyle.Quart,       Enum.EasingDirection.Out },
+    Smooth   = { 0.28, Enum.EasingStyle.Quint,       Enum.EasingDirection.Out },
+    Glide    = { 0.42, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out },
+    Pop      = { 0.38, Enum.EasingStyle.Back,        Enum.EasingDirection.Out },
+    Collapse = { 0.30, Enum.EasingStyle.Back,        Enum.EasingDirection.In  },
+    Spring   = { 0.46, Enum.EasingStyle.Back,        Enum.EasingDirection.Out },
+    Fly      = { 0.34, Enum.EasingStyle.Quint,       Enum.EasingDirection.InOut },
+    Page     = { 0.22, Enum.EasingStyle.Quint,       Enum.EasingDirection.Out },
+    Modal    = { 0.26, Enum.EasingStyle.Quint,       Enum.EasingDirection.Out },
+    Theme    = { 0.28, Enum.EasingStyle.Quad,        Enum.EasingDirection.Out },
 }
 
+-- EASE stays a plain table of TweenInfo so the ~200 existing call sites
+-- keep working untouched; it is rebuilt whenever motion settings change.
+local EASE = {}
+
+local function RebuildEase()
+    local speed = math.clamp(tonumber(Motion.Speed) or 1, 0.25, 3)
+    local reduce = Motion.ReduceMotion == true
+    for name, spec in pairs(BASE_EASE) do
+        local duration, style, dir = spec[1], spec[2], spec[3]
+        if reduce then
+            -- Reduce motion keeps the feedback and drops the theatre:
+            -- shorter, and no overshoot to track across the screen.
+            duration = duration * 0.55
+            if style == Enum.EasingStyle.Back then
+                style, dir = Enum.EasingStyle.Quad, Enum.EasingDirection.Out
+            end
+        end
+        if not Motion.Enabled then duration = 0 end
+        EASE[name] = TweenInfo.new(duration / speed, style, dir)
+    end
+end
+RebuildEase()
+
+function Nely:SetMotion(opts)
+    opts = opts or {}
+    if opts.Enabled      ~= nil then Motion.Enabled      = opts.Enabled == true end
+    if opts.Speed        ~= nil then Motion.Speed        = tonumber(opts.Speed) or 1 end
+    if opts.ReduceMotion ~= nil then Motion.ReduceMotion = opts.ReduceMotion == true end
+    RebuildEase()
+    return true
+end
+
+-- instance -> { [propertyName] = Tween }
+local ActiveTweens = setmetatable({}, { __mode = "k" })
+
+local function CancelProps(inst, props)
+    local live = ActiveTweens[inst]
+    if not live then return end
+    for prop in pairs(props) do
+        local running = live[prop]
+        if running then
+            pcall(function() running:Cancel() end)
+            live[prop] = nil
+        end
+    end
+end
+
 local function Tween(inst, props, preset)
-    local tw = TweenService:Create(inst, preset or EASE.Smooth, props)
+    if typeof(inst) ~= "Instance" then return nil end
+    local info = preset or EASE.Smooth
+
+    -- Take control from whatever was already animating these properties.
+    CancelProps(inst, props)
+
+    -- Motion off: land on the final value immediately rather than paying
+    -- for a zero-length tween per property.
+    if not Motion.Enabled then
+        for prop, value in pairs(props) do
+            pcall(function() inst[prop] = value end)
+        end
+        return nil
+    end
+
+    local tw = TweenService:Create(inst, info, props)
+    local live = ActiveTweens[inst]
+    if not live then
+        live = {}
+        ActiveTweens[inst] = live
+    end
+    for prop in pairs(props) do live[prop] = tw end
+
+    tw.Completed:Connect(function()
+        local set = ActiveTweens[inst]
+        if not set then return end
+        for prop in pairs(props) do
+            if set[prop] == tw then set[prop] = nil end
+        end
+        if next(set) == nil then ActiveTweens[inst] = nil end
+    end)
+
     tw:Play()
     return tw
+end
+
+-- Public so components can stop an animation without starting another,
+-- e.g. a dropdown abandoning its open tween the instant it is closed.
+local function CancelTweens(inst)
+    local live = ActiveTweens[inst]
+    if not live then return end
+    for _, tw in pairs(live) do pcall(function() tw:Cancel() end) end
+    ActiveTweens[inst] = nil
+end
+
+--==================================================================
+--  LOCALIZATION
+--
+--  Every built-in string the library shows now goes through L(). Hub
+--  authors' own strings are never touched -- a tab called "Autofarm"
+--  stays "Autofarm" in Russian, because translating someone's product
+--  names behind their back is worse than leaving them in English.
+--
+--  English is the fallback for any key a translation is missing, so a
+--  half-finished language shows real words rather than "settings.theme".
+--==================================================================
+
+local STRINGS = {
+    en = {
+        ["common.search"]        = "Search",
+        ["common.close"]         = "Close",
+        ["common.cancel"]        = "Cancel",
+        ["common.confirm"]       = "Confirm",
+        ["common.ready"]         = "Ready",
+        ["common.copy"]          = "Copy",
+        ["common.copied"]        = "Copied",
+        ["common.none"]          = "None",
+        ["common.reset"]         = "Reset",
+        ["common.on"]            = "On",
+        ["common.off"]           = "Off",
+        ["common.no_results"]    = "No results",
+
+        ["search.functions"]     = "Search functions",
+        ["search.games"]         = "Search games",
+        ["search.jump"]          = "Jump to anything\u{2026}",
+
+        ["loading.starting"]     = "Starting up",
+        ["loading.icons"]        = "Loading icons",
+        ["loading.icons_ready"]  = "Icons ready",
+        ["loading.building"]     = "Building interface",
+        ["loading.almost"]       = "Almost there",
+        ["loading.ready"]        = "Ready",
+
+        ["settings.title"]           = "Settings",
+        ["settings.appearance"]      = "Appearance",
+        ["settings.theme"]           = "Theme",
+        ["settings.ui_scale"]        = "UI scale",
+        ["settings.transparency"]    = "Transparency",
+        ["settings.blur"]            = "Background blur",
+        ["settings.motion"]          = "Motion",
+        ["settings.animations"]      = "Animations",
+        ["settings.animation_speed"] = "Animation speed",
+        ["settings.reduce_motion"]   = "Reduce motion",
+        ["settings.language"]        = "Language",
+        ["settings.interface"]       = "Interface",
+        ["settings.toggle_key"]      = "Toggle key",
+        ["settings.cursor"]          = "Custom cursor",
+        ["settings.notifications"]   = "Notifications",
+        ["settings.configuration"]   = "Configuration",
+        ["settings.reset_appearance"]= "Reset appearance",
+        ["settings.reset_all"]       = "Reset settings",
+        ["settings.reset_done"]      = "Settings restored to defaults",
+
+        ["dialog.close_title"]   = "Close %s?",
+        ["dialog.close_body"]    = "This shuts the interface down completely. You'll need to run the script again to bring it back.",
+
+        ["keysystem.get_key"]    = "Get key",
+        ["keysystem.unlock"]     = "Unlock",
+        ["keysystem.placeholder"]= "Paste your key",
+        ["keysystem.invalid"]    = "That key was not accepted",
+    },
+
+    fr = {
+        ["common.search"] = "Rechercher", ["common.close"] = "Fermer",
+        ["common.cancel"] = "Annuler", ["common.confirm"] = "Confirmer",
+        ["common.ready"] = "Pr\u{00EA}t", ["common.copy"] = "Copier",
+        ["common.copied"] = "Copi\u{00E9}", ["common.none"] = "Aucun",
+        ["common.reset"] = "R\u{00E9}initialiser", ["common.on"] = "Activ\u{00E9}",
+        ["common.off"] = "D\u{00E9}sactiv\u{00E9}", ["common.no_results"] = "Aucun r\u{00E9}sultat",
+        ["search.functions"] = "Rechercher une fonction",
+        ["search.games"] = "Rechercher un jeu",
+        ["search.jump"] = "Acc\u{00E9}der \u{00E0} n'importe quoi\u{2026}",
+        ["loading.starting"] = "D\u{00E9}marrage",
+        ["loading.icons"] = "Chargement des ic\u{00F4}nes",
+        ["loading.icons_ready"] = "Ic\u{00F4}nes pr\u{00EA}tes",
+        ["loading.building"] = "Construction de l'interface",
+        ["loading.almost"] = "Presque termin\u{00E9}", ["loading.ready"] = "Pr\u{00EA}t",
+        ["settings.title"] = "Param\u{00E8}tres", ["settings.appearance"] = "Apparence",
+        ["settings.theme"] = "Th\u{00E8}me", ["settings.ui_scale"] = "\u{00C9}chelle",
+        ["settings.transparency"] = "Transparence", ["settings.blur"] = "Flou d'arri\u{00E8}re-plan",
+        ["settings.motion"] = "Animation", ["settings.animations"] = "Animations",
+        ["settings.animation_speed"] = "Vitesse d'animation",
+        ["settings.reduce_motion"] = "R\u{00E9}duire les animations",
+        ["settings.language"] = "Langue", ["settings.interface"] = "Interface",
+        ["settings.toggle_key"] = "Touche d'ouverture", ["settings.cursor"] = "Curseur personnalis\u{00E9}",
+        ["settings.notifications"] = "Notifications", ["settings.configuration"] = "Configuration",
+        ["settings.reset_appearance"] = "R\u{00E9}initialiser l'apparence",
+        ["settings.reset_all"] = "R\u{00E9}initialiser les param\u{00E8}tres",
+        ["settings.reset_done"] = "Param\u{00E8}tres r\u{00E9}initialis\u{00E9}s",
+        ["dialog.close_title"] = "Fermer %s ?",
+        ["dialog.close_body"] = "Cela ferme compl\u{00E8}tement l'interface. Vous devrez relancer le script pour la r\u{00E9}ouvrir.",
+        ["keysystem.get_key"] = "Obtenir une cl\u{00E9}", ["keysystem.unlock"] = "D\u{00E9}verrouiller",
+        ["keysystem.placeholder"] = "Collez votre cl\u{00E9}",
+        ["keysystem.invalid"] = "Cl\u{00E9} refus\u{00E9}e",
+    },
+
+    es = {
+        ["common.search"] = "Buscar", ["common.close"] = "Cerrar",
+        ["common.cancel"] = "Cancelar", ["common.confirm"] = "Confirmar",
+        ["common.ready"] = "Listo", ["common.copy"] = "Copiar",
+        ["common.copied"] = "Copiado", ["common.none"] = "Ninguno",
+        ["common.reset"] = "Restablecer", ["common.on"] = "Activado",
+        ["common.off"] = "Desactivado", ["common.no_results"] = "Sin resultados",
+        ["search.functions"] = "Buscar funciones", ["search.games"] = "Buscar juegos",
+        ["search.jump"] = "Ir a cualquier lugar\u{2026}",
+        ["loading.starting"] = "Iniciando", ["loading.icons"] = "Cargando iconos",
+        ["loading.icons_ready"] = "Iconos listos",
+        ["loading.building"] = "Construyendo interfaz",
+        ["loading.almost"] = "Casi listo", ["loading.ready"] = "Listo",
+        ["settings.title"] = "Ajustes", ["settings.appearance"] = "Apariencia",
+        ["settings.theme"] = "Tema", ["settings.ui_scale"] = "Escala",
+        ["settings.transparency"] = "Transparencia", ["settings.blur"] = "Desenfoque de fondo",
+        ["settings.motion"] = "Movimiento", ["settings.animations"] = "Animaciones",
+        ["settings.animation_speed"] = "Velocidad de animaci\u{00F3}n",
+        ["settings.reduce_motion"] = "Reducir movimiento",
+        ["settings.language"] = "Idioma", ["settings.interface"] = "Interfaz",
+        ["settings.toggle_key"] = "Tecla de apertura", ["settings.cursor"] = "Cursor personalizado",
+        ["settings.notifications"] = "Notificaciones", ["settings.configuration"] = "Configuraci\u{00F3}n",
+        ["settings.reset_appearance"] = "Restablecer apariencia",
+        ["settings.reset_all"] = "Restablecer ajustes",
+        ["settings.reset_done"] = "Ajustes restablecidos",
+        ["dialog.close_title"] = "\u{00BF}Cerrar %s?",
+        ["dialog.close_body"] = "Esto cierra la interfaz por completo. Tendr\u{00E1}s que ejecutar el script de nuevo para volver a abrirla.",
+        ["keysystem.get_key"] = "Obtener clave", ["keysystem.unlock"] = "Desbloquear",
+        ["keysystem.placeholder"] = "Pega tu clave",
+        ["keysystem.invalid"] = "Clave no aceptada",
+    },
+
+    ru = {
+        ["common.search"] = "\u{041F}\u{043E}\u{0438}\u{0441}\u{043A}",
+        ["common.close"] = "\u{0417}\u{0430}\u{043A}\u{0440}\u{044B}\u{0442}\u{044C}",
+        ["common.cancel"] = "\u{041E}\u{0442}\u{043C}\u{0435}\u{043D}\u{0430}",
+        ["common.confirm"] = "\u{041F}\u{043E}\u{0434}\u{0442}\u{0432}\u{0435}\u{0440}\u{0434}\u{0438}\u{0442}\u{044C}",
+        ["common.ready"] = "\u{0413}\u{043E}\u{0442}\u{043E}\u{0432}\u{043E}",
+        ["common.copy"] = "\u{041A}\u{043E}\u{043F}\u{0438}\u{0440}\u{043E}\u{0432}\u{0430}\u{0442}\u{044C}",
+        ["common.copied"] = "\u{0421}\u{043A}\u{043E}\u{043F}\u{0438}\u{0440}\u{043E}\u{0432}\u{0430}\u{043D}\u{043E}",
+        ["common.none"] = "\u{041D}\u{0435}\u{0442}",
+        ["common.reset"] = "\u{0421}\u{0431}\u{0440}\u{043E}\u{0441}",
+        ["common.on"] = "\u{0412}\u{043A}\u{043B}", ["common.off"] = "\u{0412}\u{044B}\u{043A}\u{043B}",
+        ["common.no_results"] = "\u{041D}\u{0438}\u{0447}\u{0435}\u{0433}\u{043E} \u{043D}\u{0435} \u{043D}\u{0430}\u{0439}\u{0434}\u{0435}\u{043D}\u{043E}",
+        ["search.functions"] = "\u{041F}\u{043E}\u{0438}\u{0441}\u{043A} \u{0444}\u{0443}\u{043D}\u{043A}\u{0446}\u{0438}\u{0439}",
+        ["search.games"] = "\u{041F}\u{043E}\u{0438}\u{0441}\u{043A} \u{0438}\u{0433}\u{0440}",
+        ["search.jump"] = "\u{041F}\u{0435}\u{0440}\u{0435}\u{0439}\u{0442}\u{0438} \u{043A}\u{0443}\u{0434}\u{0430}-\u{043B}\u{0438}\u{0431}\u{043E}\u{2026}",
+        ["loading.starting"] = "\u{0417}\u{0430}\u{043F}\u{0443}\u{0441}\u{043A}",
+        ["loading.icons"] = "\u{0417}\u{0430}\u{0433}\u{0440}\u{0443}\u{0437}\u{043A}\u{0430} \u{0438}\u{043A}\u{043E}\u{043D}\u{043E}\u{043A}",
+        ["loading.icons_ready"] = "\u{0418}\u{043A}\u{043E}\u{043D}\u{043A}\u{0438} \u{0433}\u{043E}\u{0442}\u{043E}\u{0432}\u{044B}",
+        ["loading.building"] = "\u{0421}\u{0431}\u{043E}\u{0440}\u{043A}\u{0430} \u{0438}\u{043D}\u{0442}\u{0435}\u{0440}\u{0444}\u{0435}\u{0439}\u{0441}\u{0430}",
+        ["loading.almost"] = "\u{041F}\u{043E}\u{0447}\u{0442}\u{0438} \u{0433}\u{043E}\u{0442}\u{043E}\u{0432}\u{043E}",
+        ["loading.ready"] = "\u{0413}\u{043E}\u{0442}\u{043E}\u{0432}\u{043E}",
+        ["settings.title"] = "\u{041D}\u{0430}\u{0441}\u{0442}\u{0440}\u{043E}\u{0439}\u{043A}\u{0438}",
+        ["settings.appearance"] = "\u{0412}\u{043D}\u{0435}\u{0448}\u{043D}\u{0438}\u{0439} \u{0432}\u{0438}\u{0434}",
+        ["settings.theme"] = "\u{0422}\u{0435}\u{043C}\u{0430}",
+        ["settings.ui_scale"] = "\u{041C}\u{0430}\u{0441}\u{0448}\u{0442}\u{0430}\u{0431}",
+        ["settings.transparency"] = "\u{041F}\u{0440}\u{043E}\u{0437}\u{0440}\u{0430}\u{0447}\u{043D}\u{043E}\u{0441}\u{0442}\u{044C}",
+        ["settings.blur"] = "\u{0420}\u{0430}\u{0437}\u{043C}\u{044B}\u{0442}\u{0438}\u{0435} \u{0444}\u{043E}\u{043D}\u{0430}",
+        ["settings.motion"] = "\u{0410}\u{043D}\u{0438}\u{043C}\u{0430}\u{0446}\u{0438}\u{044F}",
+        ["settings.animations"] = "\u{0410}\u{043D}\u{0438}\u{043C}\u{0430}\u{0446}\u{0438}\u{0438}",
+        ["settings.animation_speed"] = "\u{0421}\u{043A}\u{043E}\u{0440}\u{043E}\u{0441}\u{0442}\u{044C} \u{0430}\u{043D}\u{0438}\u{043C}\u{0430}\u{0446}\u{0438}\u{0439}",
+        ["settings.reduce_motion"] = "\u{041C}\u{0435}\u{043D}\u{044C}\u{0448}\u{0435} \u{0434}\u{0432}\u{0438}\u{0436}\u{0435}\u{043D}\u{0438}\u{044F}",
+        ["settings.language"] = "\u{042F}\u{0437}\u{044B}\u{043A}",
+        ["settings.interface"] = "\u{0418}\u{043D}\u{0442}\u{0435}\u{0440}\u{0444}\u{0435}\u{0439}\u{0441}",
+        ["settings.toggle_key"] = "\u{041A}\u{043B}\u{0430}\u{0432}\u{0438}\u{0448}\u{0430} \u{043E}\u{0442}\u{043A}\u{0440}\u{044B}\u{0442}\u{0438}\u{044F}",
+        ["settings.cursor"] = "\u{0421}\u{0432}\u{043E}\u{0439} \u{043A}\u{0443}\u{0440}\u{0441}\u{043E}\u{0440}",
+        ["settings.notifications"] = "\u{0423}\u{0432}\u{0435}\u{0434}\u{043E}\u{043C}\u{043B}\u{0435}\u{043D}\u{0438}\u{044F}",
+        ["settings.configuration"] = "\u{041A}\u{043E}\u{043D}\u{0444}\u{0438}\u{0433}\u{0443}\u{0440}\u{0430}\u{0446}\u{0438}\u{044F}",
+        ["settings.reset_appearance"] = "\u{0421}\u{0431}\u{0440}\u{043E}\u{0441}\u{0438}\u{0442}\u{044C} \u{0432}\u{043D}\u{0435}\u{0448}\u{043D}\u{0438}\u{0439} \u{0432}\u{0438}\u{0434}",
+        ["settings.reset_all"] = "\u{0421}\u{0431}\u{0440}\u{043E}\u{0441}\u{0438}\u{0442}\u{044C} \u{043D}\u{0430}\u{0441}\u{0442}\u{0440}\u{043E}\u{0439}\u{043A}\u{0438}",
+        ["settings.reset_done"] = "\u{041D}\u{0430}\u{0441}\u{0442}\u{0440}\u{043E}\u{0439}\u{043A}\u{0438} \u{0441}\u{0431}\u{0440}\u{043E}\u{0448}\u{0435}\u{043D}\u{044B}",
+        ["dialog.close_title"] = "\u{0417}\u{0430}\u{043A}\u{0440}\u{044B}\u{0442}\u{044C} %s?",
+        ["dialog.close_body"] = "\u{0418}\u{043D}\u{0442}\u{0435}\u{0440}\u{0444}\u{0435}\u{0439}\u{0441} \u{0431}\u{0443}\u{0434}\u{0435}\u{0442} \u{043F}\u{043E}\u{043B}\u{043D}\u{043E}\u{0441}\u{0442}\u{044C}\u{044E} \u{0437}\u{0430}\u{043A}\u{0440}\u{044B}\u{0442}. \u{041F}\u{0440}\u{0438}\u{0434}\u{0451}\u{0442}\u{0441}\u{044F} \u{0437}\u{0430}\u{043F}\u{0443}\u{0441}\u{0442}\u{0438}\u{0442}\u{044C} \u{0441}\u{043A}\u{0440}\u{0438}\u{043F}\u{0442} \u{0437}\u{0430}\u{043D}\u{043E}\u{0432}\u{043E}.",
+        ["keysystem.get_key"] = "\u{041F}\u{043E}\u{043B}\u{0443}\u{0447}\u{0438}\u{0442}\u{044C} \u{043A}\u{043B}\u{044E}\u{0447}",
+        ["keysystem.unlock"] = "\u{0420}\u{0430}\u{0437}\u{0431}\u{043B}\u{043E}\u{043A}\u{0438}\u{0440}\u{043E}\u{0432}\u{0430}\u{0442}\u{044C}",
+        ["keysystem.placeholder"] = "\u{0412}\u{0441}\u{0442}\u{0430}\u{0432}\u{044C}\u{0442}\u{0435} \u{043A}\u{043B}\u{044E}\u{0447}",
+        ["keysystem.invalid"] = "\u{041A}\u{043B}\u{044E}\u{0447} \u{043E}\u{0442}\u{043A}\u{043B}\u{043E}\u{043D}\u{0451}\u{043D}",
+    },
+}
+
+Nely.Languages = {
+    { Code = "en", Name = "English"  },
+    { Code = "fr", Name = "Fran\u{00E7}ais" },
+    { Code = "es", Name = "Espa\u{00F1}ol"  },
+    { Code = "ru", Name = "\u{0420}\u{0443}\u{0441}\u{0441}\u{043A}\u{0438}\u{0439} " },
+}
+Nely.Language = "en"
+
+local function L(key, ...)
+    local pack = STRINGS[Nely.Language] or STRINGS.en
+    local text = pack[key] or STRINGS.en[key] or key
+    if select("#", ...) > 0 then
+        local ok, formatted = pcall(string.format, text, ...)
+        if ok then return formatted end
+    end
+    return text
+end
+Nely.L = L
+
+-- Text bindings. A label registered here re-reads its key when the
+-- language changes, so switching does not rebuild the window.
+local TextBindings = setmetatable({}, { __mode = "k" })
+
+local function BindText(inst, prop, key, ...)
+    if typeof(inst) ~= "Instance" then return inst end
+    local args = { ... }
+    TextBindings[inst] = TextBindings[inst] or {}
+    TextBindings[inst][prop] = { key = key, args = args }
+    pcall(function() inst[prop] = L(key, table.unpack(args)) end)
+    return inst
+end
+
+function Nely:SetLanguage(code)
+    if not STRINGS[code] then return false end
+    Nely.Language = code
+    for inst, props in pairs(TextBindings) do
+        if inst.Parent then
+            for prop, spec in pairs(props) do
+                pcall(function() inst[prop] = L(spec.key, table.unpack(spec.args)) end)
+            end
+        else
+            TextBindings[inst] = nil
+        end
+    end
+    return true
+end
+
+function Nely:GetLanguages() return Nely.Languages end
+
+--==================================================================
+--  THEME BINDING
+--
+--  The old SetTheme reverse-matched every painted colour against the old
+--  palette and swapped what it recognised. Clever, and it worked for
+--  static pixels -- but components close over the window's `theme` local,
+--  so the next hover or focus repainted from the OLD table and the
+--  interface drifted back a colour at a time.
+--
+--  Components now bind semantically: Bind(inst, "BackgroundColor3",
+--  "Surface"). The binding survives theme changes, and Tok("Surface")
+--  resolves at interaction time rather than at construction time, so a
+--  hover handler written today is correct after any number of theme
+--  switches.
+--
+--  The reverse-lookup pass is kept as a safety net for anything not yet
+--  migrated, so this is an upgrade rather than a breaking change.
+--==================================================================
+
+local ThemeBindings = setmetatable({}, { __mode = "k" })
+
+-- Resolve a token against the CURRENT theme. Components should call this
+-- inside handlers instead of capturing a colour.
+local function Tok(token, fallback)
+    local t = Nely.Theme or {}
+    return t[token] or fallback or Color3.fromRGB(255, 255, 255)
+end
+Nely.Tok = Tok
+
+-- The live theme table.
+--
+-- Components are written as `local theme = Nely.Theme` and then capture
+-- `theme` in every hover, focus and click handler they create. That is
+-- the actual bug behind "the interface drifts back to the old colours":
+-- the handler is holding the table the window was BUILT with, and no
+-- amount of repainting existing pixels changes what a future handler
+-- will paint.
+--
+-- Rather than rewrite two hundred call sites -- and require every future
+-- component to remember a rule -- the capture itself is made live. This
+-- proxy holds no colours; it forwards every read to whatever Nely.Theme
+-- currently is. So `theme.Accent` inside a handler written today returns
+-- the accent of the theme selected a minute ago, and the component
+-- author never has to think about it.
+local LiveTheme = setmetatable({}, {
+    __index = function(_, slot)
+        local t = Nely.Theme
+        return t and t[slot] or nil
+    end,
+    -- Writes go to the real table, so `theme.Accent = c` still means what
+    -- it looks like it means instead of silently shadowing.
+    __newindex = function(_, slot, value)
+        local t = Nely.Theme
+        if t then rawset(t, slot, value) end
+    end,
+    __metatable = "locked",
+})
+Nely.LiveTheme = LiveTheme
+
+local function Bind(inst, prop, token)
+    if typeof(inst) ~= "Instance" then return inst end
+    ThemeBindings[inst] = ThemeBindings[inst] or {}
+    ThemeBindings[inst][prop] = token
+    pcall(function() inst[prop] = Tok(token) end)
+    return inst
+end
+Nely.Bind = Bind
+
+-- Repaint every registered binding. Animated when motion allows, so a
+-- theme change reads as the interface changing its mind rather than a
+-- hard cut.
+local function ApplyThemeBindings(animated)
+    for inst, props in pairs(ThemeBindings) do
+        if inst.Parent then
+            for prop, token in pairs(props) do
+                local target = Tok(token)
+                if animated and Motion.Enabled then
+                    Tween(inst, { [prop] = target }, EASE.Theme)
+                else
+                    pcall(function() inst[prop] = target end)
+                end
+            end
+        else
+            ThemeBindings[inst] = nil
+        end
+    end
 end
 
 --==================================================================
@@ -1041,7 +1683,7 @@ end
 
 local function ShowTip(text, anchor)
     EnsureTip()
-    local theme = Nely.Theme
+    local theme = LiveTheme
     Tip.Frame.BackgroundColor3 = theme.Elevated
     Tip.Label.TextColor3       = theme.TextSub
     local stroke = Tip.Frame:FindFirstChildOfClass("UIStroke")
@@ -1105,9 +1747,14 @@ local NotifyHolder = New("Frame", {
 
 local notifyOrder = 0
 
+-- Set false by the Settings page. Checked here rather than at every call
+-- site so a hub does not have to know the preference exists.
+Nely.NotificationsEnabled = true
+
 function Nely:Notify(opts)
     opts = opts or {}
-    local theme    = Nely.Theme
+    if Nely.NotificationsEnabled == false then return end
+    local theme    = LiveTheme
     local title    = opts.Title    or "Notification"
     local content  = opts.Content  or ""
     local duration = opts.Duration or 4
@@ -1257,7 +1904,7 @@ end
 
 function Nely:Dialog(opts)
     opts = opts or {}
-    local theme   = Nely.Theme
+    local theme   = LiveTheme
     local title   = opts.Title   or "Confirm"
     local content = opts.Content or ""
     local buttons = opts.Buttons or {}
@@ -1532,7 +2179,7 @@ end
 
 function Nely:Watermark(opts)
     opts = opts or {}
-    local theme = Nely.Theme or Nely.Themes.Cobalt
+    local theme = LiveTheme
 
     if Nely._watermark then Nely._watermark:Destroy() end
 
@@ -1675,8 +2322,17 @@ end
 
 function Nely:CreateWindow(opts)
     opts = opts or {}
-    local theme = Nely.Themes[opts.Theme or "Graphite"] or Nely.Themes.Graphite
-    Nely.Theme = theme
+    -- Resolve once into the real table, then hand the window the live
+    -- proxy. Everything the window builds from here captures the proxy,
+    -- so SetTheme later is a genuine change of mind rather than a repaint
+    -- that the next hover undoes.
+    local resolved, canonical = ResolveTheme(opts.Theme)
+    resolved  = resolved or Nely.Themes.Metallic
+    canonical = canonical or "Metallic"
+    CompleteTheme(resolved)
+    Nely.Theme     = resolved
+    Nely.ThemeName = canonical
+    local theme    = LiveTheme
 
     local title     = opts.Title     or "Nely Hub"
     local subtitle  = opts.Subtitle  or ""
@@ -1736,9 +2392,39 @@ function Nely:CreateWindow(opts)
         Compact     = compact,
         Dense       = dense,
         TabSections = {},
+        -- Opt in to the rainbow sidebar. Off by default in v4 -- see
+        -- TabHue below for why.
+        ColorfulTabs = opts.ColorfulTabs == true,
         _tabOrder   = 0,
         _dependents = {},
+        _conns      = {},
+        _gen        = 0,
     }
+
+    -- Connection audit. Every long-lived listener the window opens goes
+    -- through here, so Destroy can actually close them. Previously a
+    -- destroyed window left RenderStepped and InputBegan handlers running
+    -- against dead frames -- harmless once, but running a hub twice in a
+    -- session stacked them.
+    local function Track(conn)
+        if conn then table.insert(Window._conns, conn) end
+        return conn
+    end
+    Window._Track = function(_, conn) return Track(conn) end
+
+    -- Generation token. Bumped whenever the window changes state in a way
+    -- that invalidates work already queued with task.delay -- a tab
+    -- transition, a dropdown close, a destroy. A delayed callback compares
+    -- the token it captured against the current one and does nothing if it
+    -- has been superseded, which is what stops a half-finished tab fade
+    -- from reappearing over the tab you actually clicked.
+    local function Generation()
+        Window._gen = Window._gen + 1
+        return Window._gen
+    end
+    local function Current(token)
+        return not Window.Destroyed and Window._gen == token
+    end
 
     -- Called by any flagged toggle after it settles, so rows that declared
     -- `Depends = "ThatFlag"` grey themselves out without polling.
@@ -2556,14 +3242,21 @@ function Nely:CreateWindow(opts)
     Window.Railed = false
     LayoutTabList()   -- SearchBar = false never reaches the search block
 
+    -- Once the rail is set deliberately -- by the hub or by the user
+    -- clicking the toggle -- the responsive manager stops choosing for
+    -- them. Auto-behaviour that overrides an explicit choice is a bug,
+    -- not a feature.
     function Window:SetRail(state)
+        Window._userRailed = true
         ApplyRail(state, true)
     end
     function Window:ToggleRail()
+        Window._userRailed = true
         ApplyRail(not railed, true)
     end
 
     railBtn.MouseButton1Click:Connect(function()
+        Window._userRailed = true
         Ripple(railBtn, 24)
         ApplyRail(not railed, true)
     end)
@@ -2571,6 +3264,7 @@ function Nely:CreateWindow(opts)
     -- SidebarMode = "rail" opens collapsed. Deferred because it walks
     -- Window.Tabs, and none of them exist yet at this point in the build.
     if opts.SidebarMode == "rail" then
+        Window._userRailed = true
         task.defer(function() ApplyRail(true, false) end)
     end
 
@@ -2645,6 +3339,9 @@ function Nely:CreateWindow(opts)
             posStart.Y.Scale, posStart.Y.Offset + grown.Y / 2
         )
         Window.CurrentSize = shell.Size
+        -- Hand-sized from here on. The responsive manager will still keep
+        -- the window on screen, but it will not second-guess the size.
+        Window._userSized  = true
     end)
     table.insert(Nely.Connections, resizeMove)
 
@@ -2814,6 +3511,172 @@ function Nely:CreateWindow(opts)
     -- somewhere comes back to where they left it.
     local homePosition = shell.Position
 
+    ----------------------------------------------------------------
+    -- RESPONSIVE MANAGER
+    --
+    -- The old build measured the viewport once, at construction, and then
+    -- never looked again. That is fine until something changes it -- and
+    -- on Roblox plenty does: rotating a phone, resizing a desktop window,
+    -- Roblox's own UI entering or leaving fullscreen. The window would
+    -- stay sized for a screen that no longer existed, sometimes hanging
+    -- off the edge with its close button unreachable.
+    --
+    -- Three modes rather than a continuum, because a continuum means the
+    -- layout is subtly different at every width and testable at none:
+    --
+    --   mobile   < 620px   rail the sidebar, maximise the shell
+    --   compact  < 900px   narrower sidebar, shorter topbar
+    --   desktop  >= 900px  full width sidebar
+    --
+    -- Row heights are deliberately NOT re-derived. They are baked into
+    -- every control at build time, and re-flowing them would mean
+    -- rebuilding the entire tree on a rotation -- a worse outcome than
+    -- rows that are 4px taller than ideal.
+    ----------------------------------------------------------------
+
+    -- Auto sizing only applies when the hub did not name a size. Someone
+    -- who passed Size = UDim2.fromOffset(800, 600) meant it.
+    local autoSized      = (opts.Size == nil)
+    local responsive     = opts.Responsive ~= false
+    Window.Responsive    = responsive
+    Window.Mode          = "desktop"
+    local resizeHooks    = {}
+
+    function Window:OnResize(fn)
+        if type(fn) ~= "function" then return function() end end
+        table.insert(resizeHooks, fn)
+        return function()
+            for i, entry in ipairs(resizeHooks) do
+                if entry == fn then table.remove(resizeHooks, i) return end
+            end
+        end
+    end
+
+    local function ModeFor(width)
+        if width < Design.Breakpoint.Mobile  then return "mobile"  end
+        if width < Design.Breakpoint.Compact then return "compact" end
+        return "desktop"
+    end
+
+    -- Keep the shell on screen. A window remembered from a 1920-wide
+    -- session must not open at x=1600 on a phone.
+    local function ClampToViewport(vp)
+        local abs = shell.AbsoluteSize
+        if abs.X <= 0 or abs.Y <= 0 then return end
+        local half = abs / 2                     -- shell is centre anchored
+        local pos  = shell.Position
+        local x    = pos.X.Scale * vp.X + pos.X.Offset
+        local y    = pos.Y.Scale * vp.Y + pos.Y.Offset
+        local cx   = math.clamp(x, half.X, math.max(half.X, vp.X - half.X))
+        local cy   = math.clamp(y, half.Y, math.max(half.Y, vp.Y - half.Y))
+        if math.abs(cx - x) > 0.5 or math.abs(cy - y) > 0.5 then
+            shell.Position = UDim2.fromOffset(cx, cy)
+        end
+    end
+
+    local function ApplyLayout(vp, mode, animate)
+        local ease = animate == false and EASE.Instant or EASE.Glide
+
+        -- Sidebar and topbar are locals captured by ApplyRail and the tab
+        -- layout, so reassigning them here is enough for everything
+        -- downstream to agree on the new numbers.
+        if not opts.SidebarWidth then
+            sidebarW = (mode == "desktop") and 196
+                    or (mode == "compact") and 168
+                    or 150
+        end
+        topbarH = (mode == "desktop") and 46 or 42
+
+        if autoSized and not Window._userSized then
+            -- Height floors are driven by the sidebar, not by taste. The
+            -- sidebar has to fit a search box (46), the player card (~100),
+            -- the topbar (46) and enough tab rows to be worth having. At
+            -- 333px -- what the previous numbers produced on a 617px tall
+            -- viewport -- the fifth tab fell below the fold, and a tab list
+            -- that needs scrolling to reach five items reads as broken even
+            -- though it scrolls fine.
+            local w, h
+            if mode == "mobile" then
+                w = Fit(0.94, 300, 580, vp.X)
+                h = Fit(0.80, 340, 620, vp.Y)
+            elseif mode == "compact" then
+                w = Fit(0.78, 380, 660, vp.X)
+                h = Fit(0.74, 360, 540, vp.Y)
+            else
+                w = Fit(0.46, 520, 760, vp.X)
+                h = Fit(0.64, 400, 580, vp.Y)
+            end
+            Window.CurrentSize = UDim2.fromOffset(w, h)
+            Tween(shell, { Size = Window.CurrentSize }, ease)
+        end
+
+        -- On a phone the sidebar is a third of the screen. Rail it, unless
+        -- the user has explicitly toggled the rail themselves this session.
+        if not Window._userRailed then
+            local wantRail = (mode == "mobile")
+            if wantRail ~= (Window.Railed and true or false) then
+                ApplyRail(wantRail, animate)
+            else
+                ApplyRail(Window.Railed, false)
+            end
+        else
+            ApplyRail(Window.Railed, false)
+        end
+
+        Tween(topbar, { Size = UDim2.new(1, 0, 0, topbarH) }, ease)
+        LayoutTabList()
+        ClampToViewport(vp)
+    end
+
+    local function Reflow(animate)
+        if Window.Destroyed then return end
+        local cam = workspace.CurrentCamera
+        local vp  = cam and cam.ViewportSize or Vector2.new(1280, 720)
+        if vp.X <= 0 or vp.Y <= 0 then return end
+
+        local mode    = responsive and ModeFor(vp.X) or Window.Mode
+        local changed = (mode ~= Window.Mode)
+        Window.Mode     = mode
+        Window.Viewport = vp
+
+        ApplyLayout(vp, mode, animate)
+
+        for i = #resizeHooks, 1, -1 do
+            local ok = pcall(resizeHooks[i], vp, mode, changed)
+            if not ok then table.remove(resizeHooks, i) end
+        end
+    end
+    Window.Reflow = function(_, animate) Reflow(animate) end
+
+    -- The camera itself can be replaced (respawn, some games swap it), so
+    -- the ViewportSize listener has to be re-bound rather than connected
+    -- once and forgotten.
+    do
+        local vpConn
+        local function Watch(cam)
+            if vpConn then vpConn:Disconnect() vpConn = nil end
+            if not cam then return end
+            vpConn = cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+                Reflow(true)
+            end)
+            table.insert(Window._conns, vpConn)
+        end
+        Watch(workspace.CurrentCamera)
+        Track(workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+            Watch(workspace.CurrentCamera)
+            Reflow(true)
+        end))
+    end
+
+    -- First pass without animation: this is the initial layout, not a
+    -- change of one.
+    Window.Mode = ModeFor((workspace.CurrentCamera
+        and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)).X)
+    task.defer(function()
+        if not Window.Destroyed then Reflow(false) end
+    end)
+
+
     -- Centre of the orb expressed in the shell's terms. The shell is centre
     -- anchored and so is the orb, so this is just the orb's own position.
     local function OrbAnchor()
@@ -2824,14 +3687,18 @@ function Nely:CreateWindow(opts)
         local fromOrb    = Window.Minimized
         Window.Minimized = false
         shell.Visible    = true
-        Tween(Blur, { Size = 14 }, EASE.Glide)
+        -- blurTarget is 0 when the user turned blur off, so opening the
+        -- window must not quietly switch it back on.
+        Tween(Blur, { Size = Window.BlurTarget and Window:BlurTarget() or 14 }, EASE.Glide)
 
         -- The orb used to blink out of existence. It now retracts, which
         -- also covers the moment the shell is growing over the top of it.
         if orb.Visible then
             Tween(orbScale, { Scale = 0 }, EASE.Collapse)
             task.delay(0.22, function()
-                if not Window.Minimized then orb.Visible = false end
+                if not Window.Destroyed and not Window.Minimized then
+                    orb.Visible = false
+                end
             end)
         end
 
@@ -2892,12 +3759,34 @@ function Nely:CreateWindow(opts)
         Tween(shell, { BackgroundTransparency = 1 }, EASE.Smooth)
         Tween(orbScale, { Scale = 0 }, EASE.Collapse)
 
+        -- Bump the generation first. Anything already queued with
+        -- task.delay -- a tab fade, a dropdown close, an orb settle --
+        -- checks this and gives up, rather than tweening a frame that is
+        -- about to be destroyed.
+        Generation()
+
         task.delay(0.4, function()
+            -- Window-scoped listeners: the ViewportSize watcher, the camera
+            -- watcher, anything registered through Track. These used to
+            -- outlive the window, so running a hub twice in one session
+            -- left the first window's handlers firing against dead frames.
+            for _, conn in ipairs(Window._conns) do
+                pcall(function() conn:Disconnect() end)
+            end
+            table.clear(Window._conns)
+
             for _, conn in ipairs(Nely.Connections) do
                 pcall(function() conn:Disconnect() end)
             end
+            table.clear(Nely.Connections)
+
+            -- Stop every in-flight tween before the instances go away.
+            CancelTweens(shell)
+            CancelTweens(orb)
+
             pcall(function() Blur:Destroy() end)
             pcall(function() Root:Destroy() end)
+            Nely.Window   = nil
             Nely.Unloaded = true
         end)
     end
@@ -3027,14 +3916,20 @@ function Nely:CreateWindow(opts)
 
     -- V4 tab hues.
     --
-    -- A sidebar of identically grey glyphs gives the eye nothing to aim
-    -- at, so every tab gets its own colour. Pass IconColor to choose, or
-    -- let this walk the hue wheel by golden ratio, which spaces any number
-    -- of tabs apart without two ever landing on the same colour. Value and
-    -- saturation stay fixed so nothing shouts louder than its neighbours.
+    -- Golden-angle hue rotation. It guarantees adjacent tabs never share a
+    -- colour, which is genuinely useful -- but ONLY when the hub asked for
+    -- colour. It is no longer the default: a sidebar of twelve unrelated
+    -- rainbow icons reads as a toy, and it fights a metallic logo for
+    -- attention. Monochrome now, colour on request via Window.ColorfulTabs
+    -- or a per-tab IconColor.
     local function AutoHue(index)
         local hue = ((index - 1) * 0.618033988749895) % 1
         return Color3.fromHSV(hue, 0.55, 1)
+    end
+
+    local function TabHue(index)
+        if Window.ColorfulTabs then return AutoHue(index) end
+        return nil   -- nil means "follow the theme", resolved live below
     end
 
     function Window:CreateTab(tabOpts)
@@ -3043,9 +3938,15 @@ function Nely:CreateWindow(opts)
         local order     = Window._tabOrder
         local tabName   = tabOpts.Name or ("Tab " .. order)
         local iconName  = tabOpts.Icon or "layers"
-        local iconColor = tabOpts.IconColor or AutoHue(order)
+        -- Two values, deliberately. `tabHue` may be nil, meaning "this tab
+        -- has no opinion, follow the theme" -- that nil is what lets the
+        -- accent track a theme change, because every later read is
+        -- `Tab.IconColor or theme.Accent`. `iconColor` is the concrete
+        -- colour to paint with right now.
+        local tabHue    = tabOpts.IconColor or TabHue(order)
+        local iconColor = tabHue or theme.Accent
 
-        local Tab = { Name = tabName, Sections = {}, IconColor = iconColor }
+        local Tab = { Name = tabName, Sections = {}, IconColor = tabHue }
 
         -- sidebar button
         local btn = New("TextButton", {
@@ -3076,21 +3977,41 @@ function Nely:CreateWindow(opts)
             ZIndex                 = 19,
             Parent                 = btn,
         }, { Corner(2) })
+        if not tabHue then Bind(marker, "BackgroundColor3", "Accent") end
 
-        -- The glyph carries its hue whether the tab is selected or not;
-        -- selection is expressed by opacity, not by draining the colour
-        -- out. An inactive sidebar still reads as a set of colours.
-        local icon = Icons.Render(iconName, btn, 16, iconColor, 18)
-        icon.Position          = UDim2.new(0, 13, 0.5, 0)
-        icon.AnchorPoint       = Vector2.new(0, 0.5)
+        -- The glyph sits on a tinted chip rather than floating loose on
+        -- the row. A bare coloured glyph on a dark panel reads as a stray
+        -- mark; the chip gives it a shape and a home, and it is the chip
+        -- that brightens on selection, so the colour has somewhere to go
+        -- other than the icon itself.
+        local chip = New("Frame", {
+            Name                   = "Chip",
+            Size                   = UDim2.fromOffset(28, 28),
+            Position               = UDim2.new(0, 8, 0.5, 0),
+            AnchorPoint            = Vector2.new(0, 0.5),
+            BackgroundColor3       = theme.Elevated,
+            BackgroundTransparency = 0.45,
+            BorderSizePixel        = 0,
+            ZIndex                 = 18,
+            Parent                 = btn,
+        }, { Corner(9) })
+        -- Resting chips are neutral, so they bind to Elevated. The active
+        -- one is repainted to the accent by Activate and is deliberately
+        -- NOT bound -- Activate owns it, and two owners means a race.
+        Bind(chip, "BackgroundColor3", "Elevated")
+
+        local icon = Icons.Render(iconName, chip, 15, iconColor, 19)
+        if not tabHue then Bind(icon, "ImageColor3", "Accent") end
+        icon.AnchorPoint       = Vector2.new(0.5, 0.5)
+        icon.Position          = UDim2.fromScale(0.5, 0.5)
         icon.ImageTransparency = 0.42
 
         local label = New("TextLabel", {
-            Size                   = UDim2.new(1, -44, 1, 0),
-            Position               = UDim2.fromOffset(38, 0),
+            Size                   = UDim2.new(1, -52, 1, 0),
+            Position               = UDim2.fromOffset(46, 0),
             BackgroundTransparency = 1,
             Text                   = tabName,
-            TextColor3             = theme.TextDim,
+            TextColor3             = theme.TextSub,
             TextSize               = 13,
             Font                   = Enum.Font.GothamMedium,
             TextXAlignment         = Enum.TextXAlignment.Left,
@@ -3168,27 +4089,50 @@ function Nely:CreateWindow(opts)
 
             for _, other in ipairs(Window.Tabs) do
                 local active = (other == Tab)
+                local hue    = other.IconColor or theme.Accent
+
                 Tween(other.Button, {
-                    BackgroundTransparency = active and 0.55 or 1,
+                    BackgroundColor3       = theme.Elevated,
+                    BackgroundTransparency = active and 0.35 or 1,
                 }, EASE.Snap)
                 Tween(other._label, {
-                    TextColor3 = active and theme.Text or theme.TextDim,
+                    TextColor3 = active and theme.Text or theme.TextSub,
                 }, EASE.Snap)
-                -- Selection changes the glyph's opacity, not its hue, so
-                -- the sidebar keeps reading as a set of colours.
-                TintIcon(other._icon, other.IconColor or theme.Accent)
+
+                -- The chip changes material, not just opacity. Resting it
+                -- is a neutral raised square that reads as a slot; active
+                -- it fills with the tab's colour and the glyph knocks out
+                -- of it. Opacity alone was invisible against a platinum
+                -- accent -- there simply is not enough contrast between
+                -- 85% and 55% of near-white on charcoal to see.
+                if other._chip then
+                    Tween(other._chip, {
+                        BackgroundColor3       = active and hue or theme.Elevated,
+                        BackgroundTransparency = active and 0.06 or 0.45,
+                    }, EASE.Snap)
+                end
+
+                -- Knocked out of the filled chip when active, so the glyph
+                -- is the backdrop colour rather than the accent -- which is
+                -- the only way it stays legible on a light platinum fill.
+                TintIcon(other._icon, active and theme.Backdrop or hue)
                 Tween(other._icon, {
                     ImageTransparency = active and 0 or 0.42,
                 }, EASE.Snap)
+
                 Tween(other._marker, {
-                    Size = UDim2.fromOffset(3, active and 20 or 0),
+                    BackgroundColor3 = hue,
+                    Size = UDim2.fromOffset(3, active and 22 or 0),
                 }, EASE.Glide)
             end
 
             if previous then
                 Tween(previous.Page, { Position = UDim2.fromOffset(-18, 0) }, EASE.Snap)
                 task.delay(0.16, function()
-                    if Window.ActiveTab ~= previous then previous.Page.Visible = false end
+                    if Window.Destroyed then return end
+                    if Window.ActiveTab ~= previous and previous.Page.Parent then
+                        previous.Page.Visible = false
+                    end
                 end)
             end
 
@@ -3199,18 +4143,28 @@ function Nely:CreateWindow(opts)
 
         Tab._label  = label
         Tab._icon   = icon
+        Tab._chip   = chip
         Tab._marker = marker
         Tab.Activate = Activate
 
+        -- Hover moves the whole row, not just its background. Previously
+        -- the chip and glyph stayed frozen while the row lit up underneath
+        -- them, which made the tab look like two things that happened to
+        -- be next to each other.
         btn.MouseEnter:Connect(function()
             if Window.ActiveTab == Tab then return end
-            Tween(btn, { BackgroundTransparency = 0.8 }, EASE.Snap)
-            Tween(label, { TextColor3 = theme.TextSub }, EASE.Snap)
+            Tween(btn,   { BackgroundColor3 = theme.Elevated,
+                           BackgroundTransparency = 0.72 }, EASE.Snap)
+            Tween(label, { TextColor3 = theme.Text }, EASE.Snap)
+            Tween(chip,  { BackgroundTransparency = 0.24 }, EASE.Snap)
+            Tween(icon,  { ImageTransparency = 0.12 }, EASE.Snap)
         end)
         btn.MouseLeave:Connect(function()
             if Window.ActiveTab == Tab then return end
-            Tween(btn, { BackgroundTransparency = 1 }, EASE.Snap)
-            Tween(label, { TextColor3 = theme.TextDim }, EASE.Snap)
+            Tween(btn,   { BackgroundTransparency = 1 }, EASE.Snap)
+            Tween(label, { TextColor3 = theme.TextSub }, EASE.Snap)
+            Tween(chip,  { BackgroundTransparency = 0.45 }, EASE.Snap)
+            Tween(icon,  { ImageTransparency = 0.42 }, EASE.Snap)
         end)
         btn.MouseButton1Click:Connect(function()
             -- Ripple sat at ZIndex 19, above the icon (18) and label (18), so
@@ -3843,6 +4797,13 @@ function Nely:CreateWindow(opts)
         function Tab:CreateToggle(cfg, flag)
             cfg = cfg or {}
             local state = cfg.CurrentValue == true
+            -- Per-control colour. A hub is full of switches that mean very
+            -- different things, and "everything is the accent colour" makes
+            -- them read as one undifferentiated wall. Pass Color to give a
+            -- switch its own meaning -- green for the innocent role, red for
+            -- the murderer, blue for a utility -- and it carries through the
+            -- track, the glow and the hover.
+            local hue = cfg.Color or theme.Accent
             local row = Row(cfg.Description and ROW_HD or ROW_H)
             RowText(row, cfg.Name or "Toggle", cfg.Description, RowIcon(row, cfg.Icon), cfg.Info)
 
@@ -3850,7 +4811,7 @@ function Nely:CreateWindow(opts)
                 Size             = UDim2.fromOffset(38, 21),
                 Position         = UDim2.new(1, -14, 0.5, 0),
                 AnchorPoint      = Vector2.new(1, 0.5),
-                BackgroundColor3 = state and theme.Accent or theme.Elevated,
+                BackgroundColor3 = state and hue or theme.Elevated,
                 BorderSizePixel  = 0,
                 ZIndex           = 18,
                 Parent           = row,
@@ -3887,7 +4848,7 @@ function Nely:CreateWindow(opts)
 
             local function Apply(value, fire)
                 state = value
-                Tween(track, { BackgroundColor3 = state and theme.Accent or theme.Elevated }, EASE.Snap)
+                Tween(track, { BackgroundColor3 = state and hue or theme.Elevated }, EASE.Snap)
                 Tween(knob, {
                     Position         = UDim2.new(0, state and 20 or 3, 0.5, 0),
                     BackgroundColor3 = state and theme.Backdrop or Color3.new(1, 1, 1),
@@ -3933,6 +4894,9 @@ function Nely:CreateWindow(opts)
             local increment = cfg.Increment or 1
             local value     = cfg.CurrentValue or range[1]
             local suffix    = cfg.Suffix or ""
+            -- Same reasoning as the toggle: a slider can carry its own
+            -- colour so a group of them is readable at a glance.
+            local hue = cfg.Color or theme.Accent
 
             -- Everything inside a slider is positioned off the bottom of the
             -- row, so the track and its hit strip follow the row height
@@ -3965,7 +4929,7 @@ function Nely:CreateWindow(opts)
                 BackgroundColor3       = theme.Elevated,
                 BorderSizePixel        = 0,
                 Text                   = tostring(value) .. suffix,
-                TextColor3             = theme.Accent,
+                TextColor3             = hue,
                 TextSize               = 12,
                 Font                   = Enum.Font.GothamBold,
                 ZIndex                 = 18,
@@ -3984,7 +4948,7 @@ function Nely:CreateWindow(opts)
             local ratio = (value - range[1]) / math.max(range[2] - range[1], 1)
             local fill = New("Frame", {
                 Size             = UDim2.fromScale(ratio, 1),
-                BackgroundColor3 = theme.Accent,
+                BackgroundColor3 = hue,
                 BorderSizePixel  = 0,
                 ZIndex           = 19,
                 Parent           = track,
@@ -4004,7 +4968,7 @@ function Nely:CreateWindow(opts)
                 BorderSizePixel  = 0,
                 ZIndex           = 21,
                 Parent           = track,
-            }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }), Stroke(theme.Accent, 2, 0) })
+            }, { New("UICorner", { CornerRadius = UDim.new(1, 0) }), Stroke(hue, 2, 0) })
 
             local api = {}
             local dragging = false
@@ -7051,6 +8015,310 @@ function Nely:CreateWindow(opts)
     end
 
     ----------------------------------------------------------------
+    -- PREFERENCES
+    --
+    -- Deliberately NOT stored in Nely.Flags, and deliberately not in the
+    -- hub's config files.
+    --
+    -- Flags are the hub's state: aimbot on, FOV 90, target = head. A user
+    -- who saves a config called "legit" and loads it later wants those
+    -- back. They do not want the interface language to change because the
+    -- config was written by someone using French, and a hub author
+    -- exporting a default config should not be shipping their own
+    -- preferred UI scale to everyone who installs it.
+    --
+    -- So preferences live in one file per executor, shared across every
+    -- hub built on this library, and configs never touch them.
+    ----------------------------------------------------------------
+
+    local PREFS_FILE = "NelyLib/preferences.json"
+
+    local Prefs = {
+        Theme          = Nely.ThemeName or "Metallic",
+        Language       = Nely.Language or "en",
+        UIScale        = 1,
+        Animations     = true,
+        AnimationSpeed = 1,
+        ReduceMotion   = false,
+        Blur           = true,
+        BlurSize       = 14,
+        Cursor         = true,
+        Notifications  = true,
+    }
+    Window.Prefs = Prefs
+
+    local function PrefsSave()
+        if not (writefile and isfolder and makefolder) then return false end
+        return (pcall(function()
+            if not isfolder("NelyLib") then makefolder("NelyLib") end
+            writefile(PREFS_FILE, HttpService:JSONEncode(Prefs))
+        end))
+    end
+
+    local function PrefsRead()
+        if not (isfile and readfile) then return nil end
+        local ok, data = pcall(function()
+            if not isfile(PREFS_FILE) then return nil end
+            return HttpService:JSONDecode(readfile(PREFS_FILE))
+        end)
+        return ok and type(data) == "table" and data or nil
+    end
+
+    -- Blur is a Lighting effect, not a GUI property -- Roblox has no
+    -- backdrop filter -- so it is the 3D scene behind the window that
+    -- softens. Cheap, but it is the single most expensive thing this
+    -- library does on a weak device, hence the switch.
+    local blurTarget = 14
+
+    function Window:SetBlur(enabled, size)
+        Prefs.Blur = enabled and true or false
+        if size then Prefs.BlurSize = math.clamp(size, 0, 40) end
+        blurTarget = Prefs.Blur and Prefs.BlurSize or 0
+        if not Window.Minimized and not Window.Destroyed then
+            Tween(Blur, { Size = blurTarget }, EASE.Smooth)
+        end
+        return blurTarget
+    end
+    Window.BlurTarget = function() return blurTarget end
+
+    function Window:SetUIScale(scale)
+        scale = math.clamp(tonumber(scale) or 1, 0.7, 1.4)
+        Prefs.UIScale = scale
+        Tween(shellScale, { Scale = scale }, EASE.Smooth)
+        Tween(orbScale, { Scale = scale }, EASE.Smooth)
+        return scale
+    end
+
+    -- Apply a whole preferences table. Used at startup and by the reset
+    -- button, so there is exactly one code path that turns preferences
+    -- into interface state.
+    function Window:ApplyPrefs(p, save)
+        p = p or Prefs
+        for key, value in pairs(p) do
+            if Prefs[key] ~= nil then Prefs[key] = value end
+        end
+
+        if Prefs.Theme and Prefs.Theme ~= Nely.ThemeName then
+            Nely:SetTheme(Prefs.Theme, { Animate = false })
+        end
+        if Prefs.Language then Nely:SetLanguage(Prefs.Language) end
+
+        Nely:SetMotion({
+            Enabled      = Prefs.Animations,
+            Speed        = Prefs.AnimationSpeed,
+            ReduceMotion = Prefs.ReduceMotion,
+        })
+
+        Window:SetBlur(Prefs.Blur, Prefs.BlurSize)
+        Window:SetUIScale(Prefs.UIScale)
+
+        if Cursor then Cursor.Enabled = Prefs.Cursor ~= false end
+        Nely.NotificationsEnabled = Prefs.Notifications ~= false
+
+        if save ~= false then PrefsSave() end
+        return Prefs
+    end
+
+    function Window:ResetPrefs()
+        local defaults = {
+            Theme = "Metallic", Language = "en", UIScale = 1,
+            Animations = true, AnimationSpeed = 1, ReduceMotion = false,
+            Blur = true, BlurSize = 14, Cursor = true, Notifications = true,
+        }
+        return Window:ApplyPrefs(defaults, true)
+    end
+
+    -- Restore on open, unless the hub opted out. RememberPrefs = false is
+    -- for a hub that wants to dictate its own look every launch.
+    if opts.RememberPrefs ~= false then
+        local saved = PrefsRead()
+        if saved then
+            -- Applied without saving back: this is a read, and writing here
+            -- would rewrite the file on every launch for no reason.
+            pcall(Window.ApplyPrefs, Window, saved, false)
+        end
+    end
+
+    ----------------------------------------------------------------
+    -- SETTINGS PAGE
+    --
+    -- Opt in with Settings = true. It is a normal tab built from the same
+    -- controls a hub uses, not a special-cased panel -- which means it
+    -- inherits every future control improvement, and a hub author can read
+    -- the source to see how the controls are meant to be used.
+    ----------------------------------------------------------------
+
+    function Window:CreateSettingsTab(cfg)
+        cfg = cfg or {}
+        local tab = Window:CreateTab({
+            Name = cfg.Name or L("settings.title"),
+            Icon = cfg.Icon or "settings",
+        })
+
+        ------------------------------------------------ appearance
+        tab:CreateSection(L("settings.appearance"))
+
+        tab:CreateDropdown({
+            Name          = L("settings.theme"),
+            Icon          = "palette",
+            Options       = Nely:GetThemes(),
+            CurrentOption = { Prefs.Theme },
+            Callback      = function(choice)
+                local name = type(choice) == "table" and choice[1] or choice
+                if not name then return end
+                Nely:SetTheme(name)
+                Prefs.Theme = name
+                PrefsSave()
+            end,
+        })
+
+        local langNames, langByName = {}, {}
+        for _, entry in ipairs(Nely.Languages) do
+            table.insert(langNames, entry.Name)
+            langByName[entry.Name] = entry.Code
+        end
+        local currentLangName = "English"
+        for _, entry in ipairs(Nely.Languages) do
+            if entry.Code == Prefs.Language then currentLangName = entry.Name end
+        end
+
+        tab:CreateDropdown({
+            Name          = L("settings.language"),
+            Icon          = "languages",
+            Options       = langNames,
+            CurrentOption = { currentLangName },
+            Callback      = function(choice)
+                local name = type(choice) == "table" and choice[1] or choice
+                local code = langByName[name]
+                if not code then return end
+                Nely:SetLanguage(code)
+                Prefs.Language = code
+                PrefsSave()
+            end,
+        })
+
+        tab:CreateSlider({
+            Name     = L("settings.ui_scale"),
+            Icon     = "scaling",
+            Min      = 70,
+            Max      = 140,
+            Default  = math.floor(Prefs.UIScale * 100),
+            Suffix   = "%",
+            Callback = function(value)
+                Window:SetUIScale(value / 100)
+                PrefsSave()
+            end,
+        })
+
+        tab:CreateToggle({
+            Name        = L("settings.blur"),
+            Icon        = "droplet",
+            Description = "Softens the game behind the window. Turn it off on a weak device.",
+            Default     = Prefs.Blur,
+            Callback    = function(state)
+                Window:SetBlur(state, Prefs.BlurSize)
+                PrefsSave()
+            end,
+        })
+
+        ------------------------------------------------ motion
+        tab:CreateDivider()
+        tab:CreateSection(L("settings.motion"))
+
+        tab:CreateToggle({
+            Name     = L("settings.animations"),
+            Icon     = "zap",
+            Default  = Prefs.Animations,
+            Callback = function(state)
+                Prefs.Animations = state
+                Nely:SetMotion({ Enabled = state })
+                PrefsSave()
+            end,
+        })
+
+        tab:CreateSlider({
+            Name        = L("settings.animation_speed"),
+            Icon        = "gauge",
+            Min         = 50,
+            Max         = 200,
+            Default     = math.floor(Prefs.AnimationSpeed * 100),
+            Suffix      = "%",
+            Description = "Higher is faster. 100% is the designed pace.",
+            Callback    = function(value)
+                Prefs.AnimationSpeed = value / 100
+                Nely:SetMotion({ Speed = Prefs.AnimationSpeed })
+                PrefsSave()
+            end,
+        })
+
+        tab:CreateToggle({
+            Name        = L("settings.reduce_motion"),
+            Icon        = "accessibility",
+            Description = "Shortens transitions and removes overshoot.",
+            Default     = Prefs.ReduceMotion,
+            Callback    = function(state)
+                Prefs.ReduceMotion = state
+                Nely:SetMotion({ ReduceMotion = state })
+                PrefsSave()
+            end,
+        })
+
+        ------------------------------------------------ interface
+        tab:CreateDivider()
+        tab:CreateSection(L("settings.interface"))
+
+        tab:CreateToggle({
+            Name     = L("settings.cursor"),
+            Icon     = "mouse-pointer-2",
+            Default  = Prefs.Cursor,
+            Callback = function(state)
+                Prefs.Cursor = state
+                if Cursor then Cursor.Enabled = state end
+                PrefsSave()
+            end,
+        })
+
+        tab:CreateToggle({
+            Name     = L("settings.notifications"),
+            Icon     = "bell",
+            Default  = Prefs.Notifications,
+            Callback = function(state)
+                Prefs.Notifications = state
+                Nely.NotificationsEnabled = state
+                PrefsSave()
+            end,
+        })
+
+        tab:CreateToggle({
+            Name        = "Colourful tabs",
+            Icon        = "paintbrush",
+            Description = "Gives every sidebar tab its own hue instead of the theme accent. Applies to tabs created after this point.",
+            Default     = Window.ColorfulTabs,
+            Callback    = function(state) Window.ColorfulTabs = state end,
+        })
+
+        ------------------------------------------------ reset
+        tab:CreateDivider()
+        tab:CreateSection(L("settings.configuration"))
+
+        tab:CreateButton({
+            Name        = L("settings.reset_all"),
+            Icon        = "rotate-ccw",
+            Description = "Interface only. Your hub settings are untouched.",
+            Callback    = function()
+                Window:ResetPrefs()
+                Nely:Notify({
+                    Title   = L("settings.title"),
+                    Content = L("settings.reset_done"),
+                    Icon    = "check",
+                })
+            end,
+        })
+
+        return tab
+    end
+
+    ----------------------------------------------------------------
     -- Prebuilt home tab
     ----------------------------------------------------------------
 
@@ -7335,10 +8603,16 @@ function Nely:CreateWindow(opts)
                 end
             end
 
-            task.delay(0.16, function() OpenWindow(true) end)
+            -- Capture the generation. Closing the window during the
+            -- splash used to re-open it a sixth of a second later, because
+            -- this timer had no idea the window it was opening was gone.
+            local token = Generation()
+            task.delay(0.16, function()
+                if Current(token) then OpenWindow(true) end
+            end)
             task.delay(0.42, function()
-                scrim:Destroy()
-                splash:Destroy()
+                pcall(function() scrim:Destroy() end)
+                pcall(function() splash:Destroy() end)
             end)
         end)
     else
@@ -7346,6 +8620,18 @@ function Nely:CreateWindow(opts)
     end
 
     Nely.Window = Window
+    -- Settings = true builds the page for you. Deferred by one frame so a
+    -- hub that creates its own tabs immediately after CreateWindow still
+    -- gets them in the order it wrote them, with Settings last -- which is
+    -- where anyone looking for it will go first.
+    if opts.Settings == true then
+        task.defer(function()
+            if not Window.Destroyed then
+                pcall(function() Window:CreateSettingsTab() end)
+            end
+        end)
+    end
+
     return Window
 end
 
@@ -7363,7 +8649,7 @@ end
 
 function Nely:KeySystem(opts)
     opts = opts or {}
-    local theme    = Nely.Theme
+    local theme    = LiveTheme
     local title    = opts.Title or "Key required"
     local note     = opts.Note or "Enter your key to continue."
     local saveFile = opts.SaveKey ~= false and ((opts.Folder or "NelyLib") .. "/key.txt") or nil
@@ -7591,15 +8877,37 @@ end
 --  GLOBAL API
 --==================================================================
 
-function Nely:SetTheme(name)
-    local newTheme = Nely.Themes[name]
+-- Hooks for code that computes a colour rather than storing one -- a
+-- lerp between Surface and Accent, say. Those cannot be expressed as a
+-- binding, so they re-run here instead.
+local ThemeHooks = {}
+
+function Nely:OnTheme(fn)
+    if type(fn) ~= "function" then return function() end end
+    table.insert(ThemeHooks, fn)
+    -- Returns its own disconnector, so a component that dies can stop
+    -- being called instead of leaking a reference to a dead frame.
+    return function()
+        for i, entry in ipairs(ThemeHooks) do
+            if entry == fn then table.remove(ThemeHooks, i) return end
+        end
+    end
+end
+
+function Nely:SetTheme(name, opts)
+    local newTheme, canonical = ResolveTheme(name)
     if not newTheme then return false end
+    CompleteTheme(newTheme)
+
     local oldTheme = Nely.Theme
     if newTheme == oldTheme then return true end
 
-    -- Every colour already painted came from a slot in the old theme, so a
-    -- reverse lookup on the old palette tells us which slot any given colour
-    -- belongs to. That means no element has to register itself up front.
+    opts = opts or {}
+    local animated = opts.Animate
+    if animated == nil then animated = true end
+    animated = animated and Motion.Enabled
+
+    -- Reverse map has to be built from the OLD palette, before the swap.
     local function Key(color)
         return ("%d|%d|%d"):format(
             math.round(color.R * 255),
@@ -7609,18 +8917,43 @@ function Nely:SetTheme(name)
     end
 
     local slotOf = {}
-    for slot, color in pairs(oldTheme) do
-        slotOf[Key(color)] = slot
+    for _, slot in ipairs(CLASSIC_SLOTS) do
+        local color = oldTheme[slot]
+        if typeof(color) == "Color3" then slotOf[Key(color)] = slot end
     end
 
-    local function Translate(color)
-        local slot = slotOf[Key(color)]
-        return slot and newTheme[slot] or nil
+    -- Swap first, so anything that reads Nely.Theme during the repaint --
+    -- a hook, a binding, a handler firing mid-tween -- already sees the
+    -- new palette. This ordering is the whole point: under the old code a
+    -- hover during the swap could repaint from the outgoing theme.
+    Nely.Theme = newTheme
+
+    -- 1. Bound properties. Authoritative, and animated.
+    ApplyThemeBindings(animated)
+
+    -- 2. Everything not yet migrated to a binding. Same reverse-lookup
+    --    trick as before -- it is still the only way to recolour an
+    --    instance that never told us what its colours meant -- but it now
+    --    yields to bindings, so a bound property is never fought over by
+    --    a colour coincidence.
+    local function isBound(inst, prop)
+        local props = ThemeBindings[inst]
+        return props ~= nil and props[prop] ~= nil
     end
 
     local function Swap(inst, prop)
-        local swapped = Translate(inst[prop])
-        if swapped then inst[prop] = swapped end
+        if isBound(inst, prop) then return end
+        local ok, current = pcall(function() return inst[prop] end)
+        if not ok or typeof(current) ~= "Color3" then return end
+        local slot = slotOf[Key(current)]
+        if not slot then return end
+        local target = newTheme[slot]
+        if not target then return end
+        if animated then
+            Tween(inst, { [prop] = target }, EASE.Theme)
+        else
+            pcall(function() inst[prop] = target end)
+        end
     end
 
     for _, inst in ipairs(Root:GetDescendants()) do
@@ -7643,20 +8976,35 @@ function Nely:SetTheme(name)
             Swap(inst, "Color")
         end
         if inst:IsA("UIGradient") then
-            local points, changed = {}, false
-            for _, keypoint in ipairs(inst.Color.Keypoints) do
-                local swapped = Translate(keypoint.Value)
-                if swapped then changed = true end
-                table.insert(points,
-                    ColorSequenceKeypoint.new(keypoint.Time, swapped or keypoint.Value))
+            -- Gradients are a single property, so "is it bound" is asked
+            -- once for the whole sequence.
+            if not isBound(inst, "Color") then
+                local points, changed = {}, false
+                for _, keypoint in ipairs(inst.Color.Keypoints) do
+                    local slot = slotOf[Key(keypoint.Value)]
+                    local swapped = slot and newTheme[slot] or nil
+                    if swapped then changed = true end
+                    table.insert(points,
+                        ColorSequenceKeypoint.new(keypoint.Time, swapped or keypoint.Value))
+                end
+                if changed then inst.Color = ColorSequence.new(points) end
             end
-            if changed then inst.Color = ColorSequence.new(points) end
         end
     end
 
-    Nely.Theme = newTheme
+    -- 3. Derived colours nobody could have stored.
+    for i = #ThemeHooks, 1, -1 do
+        local ok = pcall(ThemeHooks[i], newTheme, oldTheme)
+        -- A hook that throws is a dead component; drop it rather than
+        -- letting it break every future theme change.
+        if not ok then table.remove(ThemeHooks, i) end
+    end
+
+    Nely.ThemeName = canonical or Nely.ThemeName
     return true
 end
+
+function Nely:GetTheme() return Nely.Theme end
 
 function Nely:Destroy()
     if Nely.Window then Nely.Window:Destroy() end
