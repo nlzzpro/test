@@ -424,14 +424,19 @@ end
 --==================================================================
 function Nely:CreateWindow(opts)
     opts = opts or {}
-    local W = { Tabs = {}, Elements = {}, _order = 0, Open = true }
+    local W = { Tabs = {}, Elements = {}, _order = 0, Open = true,
+               _caps = {}, _railLabels = {}, RailOpen = true }
 
     local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
                      or Vector2.new(1280, 720)
     local compact  = viewport.X < 940
     local size     = opts.Size or UDim2.fromOffset(compact and 660 or 900,
                                                    compact and 440 or 600)
-    local RAIL     = 62
+    -- The rail carries names, not just glyphs. An icon-only rail saves
+    -- room but costs recognition: you end up hovering to find things.
+    -- It can still be collapsed to icons from the topbar.
+    local RAIL_WIDE, RAIL_THIN = (compact and 168 or 196), 62
+    local RAIL     = RAIL_WIDE
     local TOP      = 56
 
     ------------------------------------------------------------------
@@ -575,7 +580,7 @@ function Nely:CreateWindow(opts)
         BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0,
         CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ScrollingDirection = Enum.ScrollingDirection.Y, ZIndex = 21, Parent = rail,
-    }, { List(6, nil, Enum.HorizontalAlignment.Center), Pad(2, 8, 0, 0) })
+    }, { List(3), Pad(2, 8, 8, 8) })
 
     -- avatar pinned at the bottom of the rail, as in the reference
     do
@@ -628,6 +633,37 @@ function Nely:CreateWindow(opts)
     end
     W.Toggle = function() setOpen(not W.Open) end
     W.SetOpen = function(_, s) setOpen(s) end
+
+    -- Collapse the rail to glyphs. Names are the default because they are
+    -- what makes a sidebar readable; this is for when the content needs
+    -- the width back.
+    local function setRail(open)
+        W.RailOpen = open
+        local width = open and RAIL_WIDE or RAIL_THIN
+        Tween(rail, { Size = UDim2.new(0, width - 10, 1, -TOP - 6) }, EASE.Glide)
+        Tween(content, {
+            Position = UDim2.fromOffset(width + 6, TOP),
+            Size = UDim2.new(1, -width - 22, 1, -TOP - 12),
+        }, EASE.Glide)
+        for _, lbl in ipairs(W._railLabels) do
+            Tween(lbl, { TextTransparency = open and 0 or 1 }, EASE.Snap)
+        end
+        for _, cap in ipairs(W._caps) do
+            Tween(cap, { Size = UDim2.new(1, 0, 0, open and 24 or 6) }, EASE.Glide)
+            local t = cap:FindFirstChildOfClass("TextLabel")
+            if t then Tween(t, { TextTransparency = open and 0 or 1 }, EASE.Snap) end
+        end
+        for _, tab in ipairs(W.Tabs) do
+            Tween(tab._plate, {
+                Position = open and UDim2.new(0, 6, 0.5, 0) or UDim2.new(0.5, -14, 0.5, 0),
+            }, EASE.Glide)
+        end
+    end
+    W.SetRail = function(_, s) setRail(s) end
+
+    TopButton("panel-left", 134, Theme.Accent, "Collapse sidebar", function()
+        setRail(not W.RailOpen)
+    end)
 
     TopButton("layout-grid", 96, Theme.Accent, "Theme", function()
         local names = Nely:GetThemes()
@@ -749,12 +785,24 @@ function Nely:CreateWindow(opts)
     function W:CreateTabSection(cfg)
         cfg = type(cfg) == "string" and { Title = cfg } or (cfg or {})
         local Section = { Tabs = {}, Title = cfg.Title }
-        -- a hairline separator between groups of rail buttons
-        New("Frame", {
-            Size = UDim2.new(0, 22, 0, 1), BackgroundColor3 = Theme.BorderSoft,
-            BackgroundTransparency = 0.4, BorderSizePixel = 0,
-            LayoutOrder = W._order, ZIndex = 22, Parent = railList,
+        W._order = W._order + 1
+        -- A caption above each run of tabs. It hides when the rail is
+        -- collapsed, because a word has nowhere to go at 62px.
+        local cap = New("Frame", {
+            Name = "SectionCap", Size = UDim2.new(1, 0, 0, 24),
+            BackgroundTransparency = 1, LayoutOrder = W._order,
+            ZIndex = 22, Parent = railList,
         })
+        Themed(New("TextLabel", {
+            Size = UDim2.new(1, -6, 1, 0), Position = UDim2.fromOffset(6, 0),
+            BackgroundTransparency = 1,
+            Text = string.upper(tostring(cfg.Title or "")),
+            TextColor3 = Theme.TextDim, TextSize = 9.5, Font = Enum.Font.GothamBold,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Bottom,
+            ZIndex = 23, Parent = cap,
+        }), "TextColor3", "TextDim")
+        table.insert(W._caps, cap)
         function Section:CreateTab(tabCfg)
             local t = W:CreateTab(tabCfg)
             table.insert(Section.Tabs, t)
@@ -780,23 +828,42 @@ function Nely:CreateWindow(opts)
         -- rail button
         ----------------------------------------------------------------
         local btn = New("TextButton", {
-            Name = name, Size = UDim2.fromOffset(40, 40),
-            BackgroundColor3 = hue, BackgroundTransparency = 0.86,
+            Name = name, Size = UDim2.new(1, 0, 0, 40),
+            BackgroundColor3 = Theme.SurfaceAlt, BackgroundTransparency = 1,
             AutoButtonColor = false, Text = "", LayoutOrder = order,
-            ZIndex = 22, Parent = railList,
-        }, { Corner(12) })
-        local icon = RenderIcon(cfg.Icon or "layers", btn, 17, hue, 23)
+            ClipsDescendants = true, ZIndex = 22, Parent = railList,
+        }, { Corner(11) })
+        Themed(btn, "BackgroundColor3", "SurfaceAlt")
+
+        -- tinted square plate carrying the tab's colour, glyph centred
+        local plate = New("Frame", {
+            Name = "Plate", AnchorPoint = Vector2.new(0, 0.5),
+            Position = UDim2.new(0, 6, 0.5, 0), Size = UDim2.fromOffset(28, 28),
+            BackgroundColor3 = hue, BackgroundTransparency = 0.8,
+            BorderSizePixel = 0, ZIndex = 23, Parent = btn,
+        }, { Corner(9) })
+        local icon = RenderIcon(cfg.Icon or "layers", plate, 15, hue, 24)
         icon.AnchorPoint = Vector2.new(0.5, 0.5)
         icon.Position = UDim2.fromScale(0.5, 0.5)
-        icon.ImageTransparency = 0.3
-        AttachTip(btn, name)
+        icon.ImageTransparency = 0.28
 
-        -- active marker on the rail edge
+        local label = Themed(New("TextLabel", {
+            Name = "Label", Position = UDim2.fromOffset(44, 0),
+            Size = UDim2.new(1, -52, 1, 0), BackgroundTransparency = 1,
+            Text = name, TextColor3 = Theme.TextDim, TextSize = 12.5,
+            Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 23, Parent = btn,
+        }), "TextColor3", "TextDim")
+
+        -- tooltip only matters once the rail is collapsed
+        AttachTip(plate, name)
+
         local mark = New("Frame", {
-            AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, -10, 0.5, 0),
+            AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0),
             Size = UDim2.fromOffset(3, 0), BackgroundColor3 = hue,
             BorderSizePixel = 0, ZIndex = 24, Parent = btn,
         }, { Corner(2) })
+        table.insert(W._railLabels, label)
 
         ----------------------------------------------------------------
         -- page: title + two columns
@@ -843,9 +910,11 @@ function Nely:CreateWindow(opts)
             if activeTab == Tab then return end
             for _, o in ipairs(W.Tabs) do
                 local on = o == Tab
-                Tween(o.Button, { BackgroundTransparency = on and 0.72 or 0.86 }, EASE.Snap)
-                Tween(o._icon, { ImageTransparency = on and 0 or 0.3 }, EASE.Snap)
-                Tween(o._mark, { Size = UDim2.fromOffset(3, on and 20 or 0) }, EASE.Glide)
+                Tween(o.Button, { BackgroundTransparency = on and 0.55 or 1 }, EASE.Snap)
+                Tween(o._plate, { BackgroundTransparency = on and 0.55 or 0.8 }, EASE.Snap)
+                Tween(o._icon, { ImageTransparency = on and 0 or 0.28 }, EASE.Snap)
+                Tween(o._label, { TextColor3 = on and Theme.Text or Theme.TextDim }, EASE.Snap)
+                Tween(o._mark, { Size = UDim2.fromOffset(3, on and 18 or 0) }, EASE.Glide)
                 if o.Page ~= page then o.Page.Visible = false end
             end
             page.Visible = true
@@ -853,13 +922,13 @@ function Nely:CreateWindow(opts)
             Tween(page, { Position = UDim2.fromOffset(0, 0) }, EASE.Glide)
             activeTab = Tab
         end
-        Tab._icon, Tab._mark, Tab.Activate = icon, mark, activate
+        Tab._icon, Tab._mark, Tab._plate, Tab._label, Tab.Activate = icon, mark, plate, label, activate
 
         btn.MouseEnter:Connect(function()
-            if activeTab ~= Tab then Tween(btn, { BackgroundTransparency = 0.78 }, EASE.Snap) end
+            if activeTab ~= Tab then Tween(btn, { BackgroundTransparency = 0.8 }, EASE.Snap) end
         end)
         btn.MouseLeave:Connect(function()
-            if activeTab ~= Tab then Tween(btn, { BackgroundTransparency = 0.86 }, EASE.Snap) end
+            if activeTab ~= Tab then Tween(btn, { BackgroundTransparency = 1 }, EASE.Snap) end
         end)
         btn.MouseButton1Click:Connect(function() Ripple(btn) activate() end)
 
