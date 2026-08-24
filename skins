@@ -67,42 +67,35 @@ local MESHES_OLD =
 {
     ["Gingerscope"] = {
         Complete = true,
-        Meta = {
-    Event = "Christmas",
-    FX = true,
-    Image = "http://www.roblox.com/Thumbs/Asset.ashx?format=png&width=250&height=250&assetId=15666596216",
-    ItemID = 15666469505,
-    ItemName = "Gingerscope",
-    ItemType = "Gun",
-    Rarity = "Ancient",
-    Year = "2023",
-},
-        Model = {
-    Children = {
+        Display = {
     {
-    Children = {
-    {
-    Class = "WeldConstraint",
-    Id = 3,
-    Name = "WeldConstraint",
-    Props = {},
-},
-},
     Class = "MeshPart",
-    Id = 2,
+    Name = "GunDisplay",
+    Path = "(root)",
+    Props = {
+    CanCollide = false,
+    Color = Color3.fromRGB(143, 34, 34),
+    Material = Enum.Material.Brick,
+    MeshId = "rbxassetid://15374602183",
+    Reflectance = 0,
+    Size = Vector3.new(0.2697, 1.2582, 4.2087),
+    TextureID = "rbxassetid://15409041564",
+    Transparency = 0,
+},
+},
+    {
+    Class = "MeshPart",
     Name = "Scope",
     Props = {
     CanCollide = false,
-    CastShadow = true,
     Color = Color3.fromRGB(129, 181, 204),
-    DoubleSided = false,
     Material = Enum.Material.Glass,
     MeshId = "rbxassetid://15374679651",
     Reflectance = 1,
-    RelCF = CFrame.new(0, 0.48315, 0.20723, 1, 0, -0, 0, 1, -0, -0, -0, 1),
-    Size = Vector3.new(0.18712, 0.18712, 1.41355),
+    Size = Vector3.new(0.1871, 0.1871, 1.4135),
     TextureID = "",
     Transparency = 0.35,
+},
 },
     {
     Class = "Beam",
@@ -44400,6 +44393,19 @@ local function instantiateNode(node)
     return inst
 end
 
+-- A RelCF is an offset from the display's origin, so it is always small --
+-- these are weapons, a few studs across. One entry in the scrape (the Glass
+-- part on Snowcannon) carries an absolute world position instead, 3446
+-- studs out, which would weld that piece halfway across the map. Anything
+-- past arm's reach is a scraping artifact, so it collapses to identity
+-- rather than dragging the model apart.
+local MAX_REL_STUDS = 20
+local function saneRelCF(cf)
+    if typeof(cf) ~= "CFrame" then return nil end
+    if cf.Position.Magnitude > MAX_REL_STUDS then return CFrame.new() end
+    return cf
+end
+
 -- PHASE 1: create the whole tree (may YIELD on MeshParts). Collect BaseParts +
 -- their RelCF. No positioning/welding yet — that happens in finalizeOverlay,
 -- after a FRESH CFrame read, so async delays can't strand parts at a stale spot.
@@ -44410,11 +44416,12 @@ local function rebuildTree(node, parentInst, root, idToInst, parts, deferred)
             idToInst[child.Id] = inst
             if inst:IsA("BasePart") then
                 inst.Anchored, inst.CanCollide, inst.CanQuery, inst.CanTouch, inst.Massless = false, false, false, false, true
-                parts[#parts + 1] = { inst = inst, relcf = child.Props.RelCF }
+                parts[#parts + 1] = { inst = inst, relcf = saneRelCF(child.Props.RelCF) }
                 inst.Parent = root
                 rebuildTree(child, inst, root, idToInst, parts, deferred)
             elseif inst:IsA("Attachment") then
-                if child.Props.RelCF then pcall(function() inst.CFrame = child.Props.RelCF end) end
+                local acf = saneRelCF(child.Props.RelCF)
+                if acf then pcall(function() inst.CFrame = acf end) end
                 inst.Parent = root
                 rebuildTree(child, inst, root, idToInst, parts, deferred)
             elseif inst:IsA("Beam") or inst:IsA("Trail") then
@@ -44542,8 +44549,60 @@ local function axisMatch(overlaySize, handleSize)
     return CFrame.Angles(0, 0, math.rad(90))
 end
 
+-- The grip point the GAME uses, read out of the scraped tree.
+--
+-- Every display in the dump carries an Attachment -- named CustomAttachment
+-- where the weapon needs an offset, plain "Attachment" where it does not --
+-- and MM2 binds that attachment to a body attachment (RightGripAttachment
+-- in hand, GunBelt / KnifeBack when holstered) with a RigidConstraint.
+-- The attachment's RelCF is therefore the authored distance from the
+-- display's origin to the hand. It is a direct child of the root node.
+local function skinGripRelCF(data)
+    local rn = data and data.Model
+    if not rn then return nil end
+    local fallback
+    for _, child in ipairs(rn.Children or {}) do
+        if child.Class == "Attachment" and child.Props and child.Props.RelCF then
+            if child.Name == "CustomAttachment" then return child.Props.RelCF end
+            fallback = fallback or child.Props.RelCF
+        end
+    end
+    return fallback
+end
+
+-- The same point on the weapon we are covering up, in world space.
+local function baseGripWorldCF(handle)
+    local att
+    for _, d in ipairs(handle:GetChildren()) do
+        if d:IsA("Attachment") then
+            if d.Name == "CustomAttachment" then att = d break end
+            att = att or d
+        end
+    end
+    if att then
+        local ok, cf = pcall(function() return handle.CFrame * att.CFrame end)
+        if ok then return cf end
+    end
+    return handle.CFrame
+end
+
 -- The transform to hand finalizeOverlay so the skin sits in the hand the
 -- way the real weapon does.
+--
+-- This used to guess: match the longest axis of the overlay to the longest
+-- axis of the handle, then align bounding-box centres. That is why items
+-- sat wrong -- a guess about orientation and a guess about where the pivot
+-- is, multiplied together.
+--
+-- The dump already carries the answer. Put the skin's grip attachment
+-- exactly where the original weapon's grip attachment is and the rest
+-- follows, which is precisely what MM2 does. Verified against the live
+-- Workspace.WeaponDisplays: for every display checked, including
+-- non-identity ones (Harvester 0.150, Lightbringer 0.224),
+--     displayCF == bodyAttachment.WorldCFrame * attachment.CFrame:Inverse()
+-- held to a position error under 0.001 stud and 0.0000 degrees. Meta.Angles
+-- plays no part in it -- that field is for the inventory preview, not the
+-- world -- so it is no longer applied here.
 local function gripCFrame(built, handle, skinName, data)
     local rule = GRIP[skinName]
     local base = handle.CFrame
@@ -44552,24 +44611,21 @@ local function gripCFrame(built, handle, skinName, data)
         return base * (rule.CFrame or CFrame.new()) + (rule.Offset or Vector3.zero)
     end
 
-    local centre, size = overlayBounds(built)
-
-    -- The game's own orientation for this weapon wins over the generic
-    -- axis guess: it is authored data, the axis match is an inference.
-    local rot = metaAngles(data)
-    if not rot then
-        local okSize, handleSize = pcall(function() return handle.Size end)
-        if okSize and handleSize then
-            rot = axisMatch(size, handleSize)
-        else
-            rot = CFrame.new()
+    local cf
+    local relcf = skinGripRelCF(data)
+    if relcf then
+        cf = baseGripWorldCF(handle) * relcf:Inverse()
+    else
+        -- No attachment in the dump (the old flat-format weapons). Fall
+        -- back to the previous inference rather than dropping them.
+        local centre, size = overlayBounds(built)
+        local rot = metaAngles(data)
+        if not rot then
+            local okSize, handleSize = pcall(function() return handle.Size end)
+            rot = (okSize and handleSize) and axisMatch(size, handleSize) or CFrame.new()
         end
+        cf = base * rot * CFrame.new(-centre.X, -centre.Y, -centre.Z)
     end
-
-    -- Align centres, not origins. `centre` is where the model's mass sits
-    -- relative to its own root, so subtracting it puts the model's middle
-    -- on the handle's middle whatever pivot the author used.
-    local cf = base * rot * CFrame.new(-centre.X, -centre.Y, -centre.Z)
 
     if rule then
         cf = cf * (rule.CFrame or CFrame.new())
