@@ -1000,12 +1000,18 @@ end
 -- Passed-through art keeps its own colours. A glyph is a silhouette meant
 -- to be tinted; a photograph tinted to the accent colour just looks
 -- broken, so raw images are flagged and the tinting skips them.
+-- Prefix lengths are derived, not typed. The hand-counted version had
+-- rbxthumb:// down as 10 characters when it is 11, so the comparison
+-- could never be true and every rbxthumb icon rendered blank -- it was
+-- treated as a glyph name, looked up in the Lucide pack, and missed.
+local RAW_PREFIXES = { "rbxassetid://", "rbxthumb://", "rbxasset://", "http" }
+
 local function IsRawAsset(name)
-    return type(name) == "string"
-       and (string.sub(name, 1, 13) == "rbxassetid://"
-         or string.sub(name, 1, 10) == "rbxthumb://"
-         or string.sub(name, 1, 11) == "rbxasset://"
-         or string.sub(name, 1, 4)  == "http")
+    if type(name) ~= "string" then return false end
+    for _, prefix in ipairs(RAW_PREFIXES) do
+        if string.sub(name, 1, #prefix) == prefix then return true end
+    end
+    return false
 end
 Icons.IsRawAsset = IsRawAsset
 
