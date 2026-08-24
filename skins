@@ -65,34 +65,43 @@ local InvDataChanged = Remotes:WaitForChild("Inventory"):WaitForChild("Inventory
 -------------------------------------------------------------------------------
 local MESHES_OLD =
 {
+    return {
     ["Gingerscope"] = {
         Complete = true,
-        Display = {
+        Meta = {
+    Event = "Christmas",
+    FX = true,
+    Image = "http://www.roblox.com/Thumbs/Asset.ashx?format=png&width=250&height=250&assetId=15666596216",
+    ItemID = 15666469505,
+    ItemName = "Gingerscope",
+    ItemType = "Gun",
+    Rarity = "Ancient",
+    Year = "2023",
+},
+        Model = {
+    Children = {
     {
-    Class = "MeshPart",
-    Name = "GunDisplay",
-    Path = "(root)",
-    Props = {
-    CanCollide = false,
-    Color = Color3.fromRGB(143, 34, 34),
-    Material = Enum.Material.Brick,
-    MeshId = "rbxassetid://15374602183",
-    Reflectance = 0,
-    Size = Vector3.new(0.2697, 1.2582, 4.2087),
-    TextureID = "rbxassetid://15409041564",
-    Transparency = 0,
+    Children = {
+    {
+    Class = "WeldConstraint",
+    Id = 3,
+    Name = "WeldConstraint",
+    Props = {},
 },
 },
-    {
     Class = "MeshPart",
+    Id = 2,
     Name = "Scope",
     Props = {
     CanCollide = false,
+    CastShadow = true,
     Color = Color3.fromRGB(129, 181, 204),
+    DoubleSided = false,
     Material = Enum.Material.Glass,
     MeshId = "rbxassetid://15374679651",
     Reflectance = 1,
-    Size = Vector3.new(0.1871, 0.1871, 1.4135),
+    RelCF = CFrame.new(0, 0.48315, 0.20723, 1, 0, -0, 0, 1, -0, -0, -0, 1),
+    Size = Vector3.new(0.18712, 0.18712, 1.41355),
     TextureID = "",
     Transparency = 0.35,
 },
