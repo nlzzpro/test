@@ -33110,66 +33110,6 @@ local MESHES_OLD =
 
 local MESHES_FULL =
 {
-    ["Beachy"] = {
-        Complete = true,
-        Meta = {
-    Event = "Summer",
-    Image = "rbxthumb://type=Asset&w=150&h=150&id=120888453565511",
-    ItemID = 120888453565511,
-    ItemName = "Beachy",
-    ItemType = "Knife",
-    Rarity = "Godly",
-    Season = 1,
-    Year = "2026",
-},
-        Model = {
-    Children = {
-    {
-    Class = "SurfaceAppearance",
-    Id = 2,
-    Name = "SurfaceAppearance",
-    Props = {
-    AlphaMode = Enum.AlphaMode.Overlay,
-    ColorMap = "rbxassetid://128146857850145",
-},
-},
-    {
-    Class = "Attachment",
-    Id = 3,
-    Name = "Attachment",
-    Props = {
-    RelCF = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
-},
-},
-    {
-    Class = "RigidConstraint",
-    Id = 4,
-    Name = "RigidConstraint",
-    Props = {},
-},
-},
-    Class = "MeshPart",
-    Id = 1,
-    Name = "KnifeDisplay",
-    Props = {
-    CanCollide = false,
-    CastShadow = true,
-    Color = Color3.fromRGB(163, 162, 165),
-    DoubleSided = false,
-    Material = Enum.Material.Plastic,
-    MeshId = "rbxassetid://88652423673547",
-    Reflectance = 0,
-    RelCF = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
-    Size = Vector3.new(0.36936, 3.50476, 1.25938),
-    -- The real Beachy is textured by a SurfaceAppearance, whose ColorMap an
-    -- executor thread cannot write ("lacking capability Plugin"). MeshPart
-    -- TextureID is writable and takes the same albedo, so the skin renders
-    -- textured here instead of flat grey.
-    TextureID = "rbxassetid://128146857850145",
-    Transparency = 0,
-},
-},
-    },
     ["Gingerscope"] = {
         Complete = true,
         Meta = {
@@ -44557,27 +44497,6 @@ end
 --   }
 local GRIP = {}
 
--- Held weapons bind to the hand differently from holstered ones, and the
--- difference is authored per skin. Measured off a real Harvester held by
--- another player:
---
---     handle.CFrame * Tool.Grip          -> RightGripAttachment   err 0.000002
---     handle.CFrame * CustomAttachment   -> RightGripAttachment   err 0.590242
---
--- So in the hand it is Tool.Grip that binds, NOT the attachment -- the
--- opposite of the holstered case, where the attachment rule was confirmed
--- against 165 of MM2's own renders. That split is exactly why the hip
--- looked right while the hand sat half a stud out.
---
--- Grip is server data, so it can only be read off a weapon somebody is
--- actually holding. These are the ones measured so far.
-local SKIN_GRIP = {
-    -- Ancient beam guns. Their CustomAttachments agree to 3e-05
-    -- (0.12991/0.12988, 0.07501/0.07498), and the pair share a grip.
-    Harvester  = CFrame.new(0, -0.510937214, 0.340540409, 1, 0, 0, 0, 1, 0, 0, 0, 1),
-    Icepiercer = CFrame.new(0, -0.510937214, 0.340540409, 1, 0, 0, 0, 1, 0, 0, 0, 1),
-}
-
 -- Bounding box of a built overlay expressed in ROOT-LOCAL space. Parts are
 -- placed at targetCF * relcf, so relcf IS the root-local transform; the
 -- root itself contributes its own half-extents at identity.
@@ -44708,20 +44627,9 @@ local function gripCFrame(built, handle, skinName, data)
 
     local cf
     local relcf = skinGripRelCF(data)
-    local held  = handle.Parent and handle.Parent:IsA("Tool") and handle.Parent or nil
-    local sg    = SKIN_GRIP[skinName]
-
-    if held and sg then
-        -- In hand. handle.CFrame * tool.Grip IS the hand's grip point, and the
-        -- real skinned weapon sits at that point offset by its own grip, so
-        -- undo ours and apply the skin's.
-        local ok, v = pcall(function() return handle.CFrame * held.Grip * sg:Inverse() end)
-        cf = ok and v or nil
-    end
-
-    if not cf and relcf then
+    if relcf then
         cf = baseGripWorldCF(handle) * relcf:Inverse()
-    elseif not cf then
+    else
         -- No attachment in the dump (the old flat-format weapons). Fall
         -- back to the previous inference rather than dropping them.
         local centre, size = overlayBounds(built)
