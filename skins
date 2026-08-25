@@ -44571,20 +44571,6 @@ local function skinGripRelCF(data)
 end
 
 -- The same point on the weapon we are covering up, in world space.
---
--- Measured directly against MM2's own rendering rather than reasoned about.
--- With Harvester equipped -- whose CustomAttachment is most of a right angle,
--- so it actually discriminates -- the game placed its skin part at
---     relBase = (0.000002, 0.12988, 0.07520), rotation = attachment transpose
--- against the hidden original. Harvester's authored RelCF is
---     (0.12991, 0, 0.07501); -R^T*p works out to (0.000002, 0.12993, 0.07500).
--- That is exactly RelCF:Inverse(), and Celestial (identity attachment, placed
--- at identity) agrees.
---
--- Tool.Grip does NOT enter into it. An earlier version used it for the held
--- case on the reasoning that a Tool Handle has no attachment of its own; that
--- was wrong and is what threw held skins off beside the character. The base
--- part's own CFrame is the reference in both the held and holstered paths.
 local function baseGripWorldCF(handle)
     local att
     for _, d in ipairs(handle:GetChildren()) do
