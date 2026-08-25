@@ -44928,8 +44928,14 @@ end
 -- rbxthumb:// URL and this used to rewrite it into a dead rbxassetid.
 -- rbxthumb renders a model's thumbnail, so that form is what must survive.
 local function metaImage(data)
+    -- Two shapes call this: a MESHES entry, whose image lives at data.Meta.Image,
+    -- and a raw WeaponDB record (any skin outside Ancient/Godly/Chroma/Unique),
+    -- whose image is data.Image directly with no Meta wrapper. Reading only the
+    -- first shape is why any other-rarity skin kept its default backpack icon --
+    -- applyToolIcon falls back to WeaponDB for exactly those, so this path was
+    -- silently hit every time one got equipped.
     local m = data and data.Meta
-    local img = m and m.Image
+    local img = (m and m.Image) or (data and data.Image)
     if type(img) ~= "string" or img == "" then return nil end
     img = (img:gsub("^%s+", ""):gsub("%s+$", ""))
     -- Already usable: a thumbnail URL, or a genuine image asset.
@@ -44966,24 +44972,12 @@ local GRIP = {}
 --
 -- Grip is server data, so it can only be read off a weapon somebody is
 -- actually holding. These are the ones measured so far.
--- Now empty, deliberately. Tool.Grip turns out to be per-SLOT, not per-skin:
--- every gun measured off live players carries the same grip
---     Gun   CFrame.new(0, -0.7, -0.3) * Rx(90)     (3 independent sightings)
---     Knife CFrame.new(0, -1,   -0.1)              (identity rotation)
--- and the held Handle uses the SAME mesh and size as the holstered display
--- (Gun 79401392 @ 0.2/1.83/1.03, Knife 121944778 @ 0.4/3/0.7). So in the hand
--- the skin body simply coincides with the Handle body, for every weapon.
---
--- Because the grip never varies, "handle * Grip * sg:Inverse()" with a
--- translation-only sg can only ever rotate the skin by the gun grip's own 90
--- degrees. Measured, the two entries below placed Harvester 90 degrees off the
--- handle while all 175 other weapons sat at 0 -- so they were compensating for
--- the holster-attachment bug that gripCFrame no longer has. Kept here as data
--- rather than deleted; restoring them reintroduces that 90-degree offset.
---
---     Harvester  = CFrame.new(0, -0.510937214, 0.340540409, 1,0,0, 0,1,0, 0,0,1),
---     Icepiercer = CFrame.new(0, -0.510937214, 0.340540409, 1,0,0, 0,1,0, 0,0,1),
-local SKIN_GRIP = {}
+local SKIN_GRIP = {
+    -- Ancient beam guns. Their CustomAttachments agree to 3e-05
+    -- (0.12991/0.12988, 0.07501/0.07498), and the pair share a grip.
+    Harvester  = CFrame.new(0, -0.510937214, 0.340540409, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+    Icepiercer = CFrame.new(0, -0.510937214, 0.340540409, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+}
 
 -- Bounding box of a built overlay expressed in ROOT-LOCAL space. Parts are
 -- placed at targetCF * relcf, so relcf IS the root-local transform; the
@@ -45126,20 +45120,7 @@ local function gripCFrame(built, handle, skinName, data)
         cf = ok and v or nil
     end
 
-    if not cf and relcf and held then
-        -- IN HAND, no measured grip. The dumped attachment is the HOLSTER
-        -- mount, and MM2 hangs weapons on the hip at an angle -- BeachyChroma's
-        -- is ~50 degrees off, Beachy's identity. Applying that hip angle to a
-        -- weapon in the hand tips it diagonally, which is what made held skins
-        -- look wrong while holstered ones were exact.
-        --
-        -- In the hand the binding reference is Tool.Grip, not the attachment,
-        -- and MM2 renders a skin by swapping the Handle's mesh -- the skin body
-        -- IS the handle body. So the skin root goes on the handle, unrotated.
-        -- Default weapons already behaved this way only because their
-        -- attachments happen to be identity.
-        cf = base
-    elseif not cf and relcf then
+    if not cf and relcf then
         cf = baseGripWorldCF(handle) * relcf:Inverse()
     elseif not cf then
         -- No attachment in the dump (the old flat-format weapons). Fall
@@ -45253,7 +45234,13 @@ local function hideInto(list, inst)
     end
 end
 local function restore(hidden)
-    for _, h in ipairs(hidden) do pcall(function() h.inst[h.prop] = h.val end) end
+    -- toolState[tool] can legitimately hold only {texture=...} with no
+    -- .hidden -- overlayTool sets that much before it can bail out (icon
+    -- first, on purpose), then returns early if the mesh build fails or the
+    -- skin has no MESHES entry. unoverlayTool/refreshTool call restore(st.hidden)
+    -- unconditionally, so an ipairs(nil) here throws and aborts whichever of
+    -- them was running -- observed live when a tag was removed mid-build.
+    for _, h in ipairs(hidden or {}) do pcall(function() h.inst[h.prop] = h.val end) end
 end
 
 -------------------------------------------------------------------------------
