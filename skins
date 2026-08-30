@@ -44986,6 +44986,18 @@ local SKIN_GRIP = {
     -- identity rotation, same shape of value as the Harvester/Icepiercer
     -- pair above.
     Beachy = CFrame.new(0, -1, -0.07032, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+
+    -- Both read directly off opendarec's own real, genuinely-equipped
+    -- loadout mid-session (live Handle.MeshId matched this database's
+    -- scraped mesh id exactly for both, so the geometry is current).
+    -- Blossom_G's value is almost exactly the old generic hand-offset
+    -- stand-in (0, -0.313, 0.631) -- which makes sense, since that
+    -- constant was originally measured off a plain gun like this one --
+    -- so this mostly just makes it exact instead of approximate.
+    -- Celestial is the first Knife whose real grip differs meaningfully
+    -- from Beachy's, confirming per-mesh Grip varies for knives too.
+    Blossom_G = CFrame.new(0, -0.31302, 0.63121, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+    Celestial = CFrame.new(0, -0.04442, 0.23832, 1, 0, 0, 0, 1, 0, 0, 0, 1),
 }
 
 -- Bounding box of a built overlay expressed in ROOT-LOCAL space. Parts are
@@ -45015,29 +45027,6 @@ local function overlayBounds(built)
     end
     if not minV then return Vector3.zero, Vector3.one end
     return (minV + maxV) / 2, (maxV - minV)
-end
-
--- Index of the largest component, and its value.
-local function longestAxis(v)
-    if v.X >= v.Y and v.X >= v.Z then return "X", v.X end
-    if v.Y >= v.X and v.Y >= v.Z then return "Y", v.Y end
-    return "Z", v.Z
-end
-
--- Rotation that brings the overlay's long axis onto the handle's long
--- axis. Handles are modelled long-on-Y or long-on-Z depending on the
--- weapon, so this cannot be a constant.
-local function axisMatch(overlaySize, handleSize)
-    local oa = longestAxis(overlaySize)
-    local ha = longestAxis(handleSize)
-    if oa == ha then return CFrame.new() end
-    if (oa == "Y" and ha == "Z") or (oa == "Z" and ha == "Y") then
-        return CFrame.Angles(math.rad(90), 0, 0)
-    end
-    if (oa == "X" and ha == "Z") or (oa == "Z" and ha == "X") then
-        return CFrame.Angles(0, math.rad(90), 0)
-    end
-    return CFrame.Angles(0, 0, math.rad(90))
 end
 
 -- The grip point the GAME uses, read out of the scraped tree.
@@ -45150,23 +45139,35 @@ local function gripCFrame(built, handle, skinName, data)
     elseif not cf and relcf then
         -- KNOWN GAP: this is the same holster-attachment rule the comment
         -- above says is wrong for a held item, applied here to every held
-        -- Knife (and to holstered guns, where it IS correct) because no
-        -- knife has ever had its held Tool.Grip measured -- SKIN_GRIP has
-        -- zero Knife entries. Left as the least-wrong fallback rather than
-        -- inventing a translation the way the Gun branch above does, since
-        -- there is no held-knife measurement to base one on. Fix by
-        -- measuring a real held knife (RightGrip C0/C1 + Tool.Grip, same
-        -- method as Harvester/Icepiercer) and adding it to SKIN_GRIP.
+        -- Knife (and to holstered guns, where it IS correct) for any Knife
+        -- not yet in SKIN_GRIP (Beachy and Celestial are the only two
+        -- measured so far, out of 533). Left as the least-wrong fallback
+        -- rather than inventing a translation the way the Gun branch above
+        -- does, since there is no held-knife measurement to base one on
+        -- for everything else. Fix by measuring a real held knife
+        -- (RightGrip C0/C1 + Tool.Grip, same method as Harvester/
+        -- Icepiercer/Beachy/Celestial) and adding it to SKIN_GRIP.
         cf = baseGripWorldCF(handle) * relcf:Inverse()
     elseif not cf then
         -- No attachment in the dump (the old flat-format weapons). Fall
         -- back to the previous inference rather than dropping them.
-        local centre, size = overlayBounds(built)
-        local rot = metaAngles(data)
-        if not rot then
-            local okSize, handleSize = pcall(function() return handle.Size end)
-            rot = (okSize and handleSize) and axisMatch(size, handleSize) or CFrame.new()
-        end
+        --
+        -- axisMatch used to guess a rotation here by comparing the
+        -- overlay's longest axis to the real handle's. Live-tested against
+        -- two flat guns (Cursed_G_2024, Ginger_G_2018) and confirmed wrong
+        -- both times: their "(root)" Part is the generic flat-format
+        -- placeholder box (0.2, 1.83, 1.03, shared verbatim by ~200+
+        -- entries in this database), not the item's real visual extent --
+        -- the actual shape lives in a child SpecialMesh with its own
+        -- Scale, which this box says nothing about. Matching axes against
+        -- that placeholder produced a spurious 90-degree rotation that
+        -- swung the mesh's visible mass off to the side, reading as the
+        -- weapon floating away from the hand instead of sitting in it.
+        -- Dropping the guess and keeping the handle's own orientation
+        -- (identity, unless Meta.Angles says otherwise) put both back in
+        -- the hand correctly.
+        local centre = overlayBounds(built)
+        local rot = metaAngles(data) or CFrame.new()
         cf = base * rot * CFrame.new(-centre.X, -centre.Y, -centre.Z)
     end
 
