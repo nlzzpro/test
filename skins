@@ -44977,6 +44977,15 @@ local SKIN_GRIP = {
     -- (0.12991/0.12988, 0.07501/0.07498), and the pair share a grip.
     Harvester  = CFrame.new(0, -0.510937214, 0.340540409, 1, 0, 0, 0, 1, 0, 0, 0, 1),
     Icepiercer = CFrame.new(0, -0.510937214, 0.340540409, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+
+    -- First-ever measured Knife. Read directly off xQuartz0's real,
+    -- genuinely-owned Beachy (ItemID attribute on the live Tool confirmed
+    -- it, and the live Handle.MeshId -- rbxassetid://88652423673547 --
+    -- matches this database's scraped MESHES["Beachy"] mesh id exactly,
+    -- so the geometry here is current, not stale). Translation-only,
+    -- identity rotation, same shape of value as the Harvester/Icepiercer
+    -- pair above.
+    Beachy = CFrame.new(0, -1, -0.07032, 1, 0, 0, 0, 1, 0, 0, 0, 1),
 }
 
 -- Bounding box of a built overlay expressed in ROOT-LOCAL space. Parts are
@@ -45139,6 +45148,15 @@ local function gripCFrame(built, handle, skinName, data)
         -- to roughly where a real held grip sits.
         cf = base * CFrame.new(0, -0.313, 0.631)
     elseif not cf and relcf then
+        -- KNOWN GAP: this is the same holster-attachment rule the comment
+        -- above says is wrong for a held item, applied here to every held
+        -- Knife (and to holstered guns, where it IS correct) because no
+        -- knife has ever had its held Tool.Grip measured -- SKIN_GRIP has
+        -- zero Knife entries. Left as the least-wrong fallback rather than
+        -- inventing a translation the way the Gun branch above does, since
+        -- there is no held-knife measurement to base one on. Fix by
+        -- measuring a real held knife (RightGrip C0/C1 + Tool.Grip, same
+        -- method as Harvester/Icepiercer) and adding it to SKIN_GRIP.
         cf = baseGripWorldCF(handle) * relcf:Inverse()
     elseif not cf then
         -- No attachment in the dump (the old flat-format weapons). Fall
