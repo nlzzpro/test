@@ -63,7 +63,7 @@ local InvDataChanged = Remotes:WaitForChild("Inventory"):WaitForChild("Inventory
 -------------------------------------------------------------------------------
 -- Embedded weapon mesh data (scraped from the game)
 -------------------------------------------------------------------------------
-local MESHES_OLD = =
+local MESHES_OLD =
 {
     ["Gingerscope"] = {
         Complete = true,
