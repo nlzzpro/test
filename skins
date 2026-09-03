@@ -11773,6 +11773,15 @@ end
 local function instantiateNode(node)
     local cls = node.Class
     if STRUCTURAL[cls] then return nil end
+    -- A SurfaceAppearance on a MeshPart fully overrides the part's own
+    -- TextureID for rendering. Three entries in the scrape (Celestial,
+    -- Constellation, Heart Wand) carry a SurfaceAppearance node whose Props
+    -- came back empty -- no ColorMap was captured -- so instantiating it
+    -- blanked out an otherwise-correct TextureID and rendered as flat
+    -- gray/white. Skipping the node when there is nothing to paint with
+    -- lets the MeshPart's own TextureID show through, same as items that
+    -- never had a SurfaceAppearance to begin with.
+    if cls == "SurfaceAppearance" and not (node.Props and node.Props.ColorMap) then return nil end
     local inst
     if cls == "MeshPart" then
         inst = createMeshPart(node.Props)
@@ -12075,35 +12084,31 @@ local function gripCFrame(built, handle, skinName, data)
         cf = ok and v or nil
     end
 
-    if not cf and relcf and held and data.Meta and data.Meta.ItemType == "Gun" then
-        -- Held guns only, no measured SKIN_GRIP (Harvester/Icepiercer keep
-        -- their own entry above, untouched). The holster attachment is the
-        -- wrong reference for the hand -- it is the HIP mount, tilted up to
-        -- 180 degrees off (Sugar, Minty, IceDragon) or ~104 (which is why
-        -- Harvester/Icepiercer needed SKIN_GRIP in the first place). Reusing
-        -- it here is what floated/rotated held guns diagonally.
+    if not cf and relcf then
+        -- Unified fallback for guns AND knives, held or holstered, when
+        -- there is no measured SKIN_GRIP. This used to split in two: held
+        -- guns got a generic constant (0, -0.313, 0.631), measured off one
+        -- plain gun (Blossom_G) and known not to generalise (0.7-stud error
+        -- live-tested on Watergun); held knives fell through to this same
+        -- attachment formula but flagged as an unverified "known gap".
         --
-        -- Real Tool.Grip varies per weapon mesh -- measured off xQuartz0
-        -- actually holding a drawn, skinned Gun: translation-only offset
-        -- (0, -0.313, 0.631), identity rotation. That contradicts an earlier
-        -- reading taken only off default-shaped guns (which suggested a
-        -- fixed Rx(90) baked into Tool.Grip itself); the truth is Grip is
-        -- per-mesh, not per-slot. Lacking a measured grip for every gun
-        -- skin, this translation is the best general stand-in: keep the
-        -- handle's own orientation so the mesh does not tip, and shift it
-        -- to roughly where a real held grip sits.
-        cf = base * CFrame.new(0, -0.313, 0.631)
-    elseif not cf and relcf then
-        -- KNOWN GAP: this is the same holster-attachment rule the comment
-        -- above says is wrong for a held item, applied here to every held
-        -- Knife (and to holstered guns, where it IS correct) for any Knife
-        -- not yet in SKIN_GRIP (Beachy and Celestial are the only two
-        -- measured so far, out of 533). Left as the least-wrong fallback
-        -- rather than inventing a translation the way the Gun branch above
-        -- does, since there is no held-knife measurement to base one on
-        -- for everything else. Fix by measuring a real held knife
-        -- (RightGrip C0/C1 + Tool.Grip, same method as Harvester/
-        -- Icepiercer/Beachy/Celestial) and adding it to SKIN_GRIP.
+        -- An independent reference implementation (mm2things/"message (3).txt",
+        -- functions HoldC0/BindHeld) welds its overlay onto the REAL equipped
+        -- Handle using exactly this formula -- the item's own attachment
+        -- RelCF, inverted, against the handle's own attachment -- for every
+        -- held item, gun or knife, with no special case for guns at all.
+        -- That is independent confirmation of what baseGripWorldCF already
+        -- does, which this file separately verified for the HOLSTERED case
+        -- against live Workspace.WeaponDisplays: position error under 0.001
+        -- stud, 0.0000 degrees, across every display checked including
+        -- non-identity ones (Harvester 0.150, Lightbringer 0.224).
+        --
+        -- Two sources agreeing independently is why the held-gun special
+        -- case is gone rather than just widened -- but the HELD case
+        -- specifically has not been live-verified the way the holstered
+        -- case has (no Roblox client was connected when this was written).
+        -- Confirm against a real held Watergun/Harvester before trusting
+        -- this the way the holstered formula is trusted.
         cf = baseGripWorldCF(handle) * relcf:Inverse()
     elseif not cf then
         -- No attachment in the dump (the old flat-format weapons). Fall
@@ -12270,15 +12275,66 @@ local function isMine(inst)
     if inst:IsDescendantOf(LocalPlayer) then return true end
     local c = char(); return c ~= nil and inst:IsDescendantOf(c)
 end
--- Applies the equipped skin's inventory picture to a Tool, remembering
--- what was there so it can be put back. Independent of the 3D overlay.
-local function applyToolIcon(tool, skin)
+-- Applies the equipped skin's inventory picture to a Tool AND to every
+-- other GUI surface MM2 shows the same picture on -- the HUD hotbar slot
+-- (MainGUI.Game.Gun/Knife.ImageLabel) and the backpack tile (any ImageLabel
+-- named ToolIcon under BackpackUI) -- so switching skins updates
+-- everywhere at once instead of leaving the hotbar/backpack showing the
+-- old (or default) art until the next equip cycle. Paths verified live
+-- against this game's actual PlayerGui rather than assumed. Independent
+-- of the 3D overlay -- this runs even for skins with no mesh.
+local iconHook, guiIconHook, kindIcon = {}, {}, {}
+local function pinGuiIcon(inst, slot, icon)
+    if not (inst and (inst:IsA("ImageLabel") or inst:IsA("ImageButton"))) then return end
+    pcall(function() inst.Image = icon end)
+    if guiIconHook[inst] then return end
+    inst:SetAttribute("MM2VizSlot", slot)
+    guiIconHook[inst] = inst:GetPropertyChangedSignal("Image"):Connect(function()
+        local s = inst:GetAttribute("MM2VizSlot")
+        local target = s and kindIcon[s]
+        if target and inst.Image ~= target then pcall(function() inst.Image = target end) end
+    end)
+end
+local function applyToolIcon(tool, skin, slot)
     if not skin then return nil end
     local info = MESHES[skin] or WeaponDB[skin]
     local icon = metaImage(info)
     if not icon then return nil end
     local previous = tool.TextureId
     local ok = pcall(function() tool.TextureId = icon end)
+
+    if slot then
+        kindIcon[slot] = icon
+        if not iconHook[tool] then
+            iconHook[tool] = tool:GetPropertyChangedSignal("TextureId"):Connect(function()
+                local target = kindIcon[slot]
+                if target and tool.Parent and tool.TextureId ~= target then
+                    pcall(function() tool.TextureId = target end)
+                end
+            end)
+        end
+    end
+
+    if slot then
+        pcall(function()
+            local pg = LocalPlayer:FindFirstChild("PlayerGui")
+            local hud = pg and pg:FindFirstChild("MainGUI")
+            hud = hud and hud:FindFirstChild("Game")
+            hud = hud and hud:FindFirstChild(slot)
+            local label = hud and hud:FindFirstChild("ImageLabel")
+            if label then pinGuiIcon(label, slot, icon) end
+        end)
+        pcall(function()
+            local pg = LocalPlayer:FindFirstChild("PlayerGui")
+            local backpack = pg and pg:FindFirstChild("BackpackUI")
+            if backpack then
+                for _, d in ipairs(backpack:GetDescendants()) do
+                    if d.Name == "ToolIcon" then pinGuiIcon(d, slot, icon) end
+                end
+            end
+        end)
+    end
+
     return ok and previous or nil
 end
 
@@ -12290,7 +12346,7 @@ local function overlayTool(tool, slot)
 
     -- Icon first, before anything that can bail out. Every item in the
     -- database has one, including the Uniques that have no mesh.
-    local prevTexture = applyToolIcon(tool, skin)
+    local prevTexture = applyToolIcon(tool, skin, slot)
     if prevTexture then
         toolState[tool] = { texture = prevTexture }
     end
