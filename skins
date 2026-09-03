@@ -833,7 +833,24 @@ return {
     Class = "SurfaceAppearance",
     Id = 2,
     Name = "SurfaceAppearance",
-    Props = {},
+    -- The original scrape captured this node with no properties at all,
+    -- which the builder now (correctly) treats as "nothing to paint
+    -- with" and skips creating -- but that only fell back to the
+    -- MeshPart's own TextureID, which is NOT what the real game shows:
+    -- a SurfaceAppearance on a MeshPart fully overrides TextureID for
+    -- rendering. Read directly off a real, untouched, currently-held
+    -- Constellation (ItemID attribute confirmed it, and MeshId/TextureID
+    -- both matched this entry's own scraped values exactly, so the
+    -- geometry here is current) since without Nely it renders correctly
+    -- and with Nely it did not -- exactly the missing-data signature.
+    -- NormalMap was genuinely empty on the real one too, so it stays
+    -- absent here rather than being invented as "".
+    Props = {
+    AlphaMode = Enum.AlphaMode.Overlay,
+    ColorMap = "rbxassetid://123603327635244",
+    MetalnessMap = "rbxassetid://72501906689820",
+    RoughnessMap = "rbxassetid://114002343534962",
+},
 },
     {
     Class = "Attachment",
