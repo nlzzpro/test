@@ -5775,13 +5775,35 @@ function Nely:CreateWindow(opts)
             caret.Position    = UDim2.new(1, -16, 0, math.floor(rowHeight / 2) - 6)
             caret.AnchorPoint = Vector2.new(1, 0.5)
 
-            local optionHost = New("Frame", {
-                Size                   = UDim2.new(1, -20, 0, 0),
-                Position               = UDim2.fromOffset(10, rowHeight),
-                AutomaticSize          = Enum.AutomaticSize.Y,
-                BackgroundTransparency = 1,
-                ZIndex                 = 18,
-                Parent                 = row,
+            -- A real ScrollingFrame, not an AutomaticSize Frame that just
+            -- grows to fit every option: a long list (Language, Rarity,
+            -- anything with many entries) used to make the whole row
+            -- balloon to fit all of them, at the mercy of the parent
+            -- tab's own page-level scrolling to ever reach the bottom
+            -- ones -- fine with a mouse wheel, but touch dragging inside
+            -- that giant expanded row didn't reliably scroll it on a
+            -- small phone. Capping this frame's own height and giving it
+            -- real ScrollingEnabled/touch-drag support means the list
+            -- scrolls INTERNALLY once it's taller than maxDropdownHeight,
+            -- same behaviour on desktop (mouse wheel) and mobile (touch
+            -- drag) since it's the same native ScrollingFrame either way.
+            local maxDropdownHeight = math.clamp(viewport.Y * 0.35, 160, 320)
+            local optionHost = New("ScrollingFrame", {
+                Size                     = UDim2.new(1, -20, 0, 0),
+                Position                 = UDim2.fromOffset(10, rowHeight),
+                BackgroundTransparency   = 1,
+                BorderSizePixel          = 0,
+                ZIndex                   = 18,
+                ScrollingDirection       = Enum.ScrollingDirection.Y,
+                ScrollingEnabled         = true,
+                Active                   = true,
+                AutomaticCanvasSize      = Enum.AutomaticSize.Y,
+                CanvasSize               = UDim2.new(0, 0, 0, 0),
+                ElasticBehavior          = Enum.ElasticBehavior.WhenScrollable,
+                ScrollBarThickness       = 4,
+                ScrollBarImageColor3     = theme.TextDim,
+                ScrollBarImageTransparency = 0.3,
+                Parent                   = row,
             }, { List(4), Pad(0, 10, 0, 0) })
 
             local entries = {}
@@ -5902,12 +5924,24 @@ function Nely:CreateWindow(opts)
                 Parent                 = row,
             })
 
+            local optionList = optionHost:FindFirstChildOfClass("UIListLayout")
+
             header.MouseButton1Click:Connect(function()
                 expanded = not expanded
-                local target = expanded
-                    and (rowHeight + optionHost.AbsoluteSize.Y + 4)
-                    or rowHeight
-                Tween(row, { Size = UDim2.new(1, 0, 0, target) }, EASE.Glide)
+                if expanded then
+                    -- AbsoluteContentSize is the UIListLayout's own real
+                    -- content height regardless of how optionHost itself
+                    -- is sized -- capped at maxDropdownHeight so a
+                    -- 20-option list opens to a fixed, reachable size and
+                    -- scrolls internally, rather than opening to its full
+                    -- content height every time.
+                    local contentH = optionList and optionList.AbsoluteContentSize.Y or 0
+                    local hostH = math.min(contentH, maxDropdownHeight)
+                    optionHost.Size = UDim2.new(1, -20, 0, hostH)
+                    Tween(row, { Size = UDim2.new(1, 0, 0, rowHeight + hostH + 4) }, EASE.Glide)
+                else
+                    Tween(row, { Size = UDim2.new(1, 0, 0, rowHeight) }, EASE.Glide)
+                end
                 Tween(caret, { Rotation = expanded and 180 or 0 }, EASE.Glide)
             end)
 
