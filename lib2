@@ -190,15 +190,19 @@ Nely.Themes = {
     },
 }
 
+--------------------------------------------------------------------
 --  SILVER FAMILY
+--
 --  Built for a grey logo. Every theme below shares one strictly neutral
 --  greyscale ramp — no blue, no green, nothing that would tint a silver
 --  mark sitting on top of it — and differs only in its accent. That is
 --  the whole trick: when the chrome has no hue of its own, a metallic
 --  logo reads as metal instead of picking up a colour cast, and any
 --  accent you like can sit beside it without clashing.
+--
 --  Silver is the one that matches the logo directly. The rest are the
 --  same shell with one hue turned on.
+--------------------------------------------------------------------
 
 do
     -- One ramp, six themes. Deeper than Graphite so a light logo has
@@ -251,11 +255,13 @@ end
 Nely.Theme     = Nely.Themes.Metallic
 Nely.ThemeName = "Metallic"
 
+--------------------------------------------------------------------
 --  CUSTOM THEMES
 --  Only the slots you care about need supplying. Anything left out is
 --  inherited from Base (default Cobalt), so a two-line theme is a
 --  legitimate theme — you aren't forced to hand-pick seventeen greys
 --  to change the accent colour.
+--------------------------------------------------------------------
 
 -- Names people reach for. Aliases rather than copies, so a theme edited
 -- at runtime stays consistent under every name it answers to.
@@ -369,11 +375,13 @@ end
 
 --==================================================================
 --  LOCALIZATION
+--
 --  Library-owned text only. A hub's own tab names, control labels and
 --  descriptions are never touched -- translating someone's product
 --  wording behind their back is worse than leaving it in English. A hub
 --  that DOES want a string translated registers it (Nely:AddStrings) and
 --  passes the key.
+--
 --  Labels are BOUND rather than assigned, so SetLanguage repaints the
 --  open interface in place with no rebuild.
 --==================================================================
@@ -381,7 +389,7 @@ end
 local STRINGS = {
     en = {
         ["settings.colored"] = "Colored UI",
-        ["settings.desc.colored"] = "tab icons and enabled toggles use the theme accent instead of platinum",
+        ["settings.desc.colored"] = "Tab icons and enabled toggles use the theme accent instead of platinum",
         ["common.search"]           = "Search",
         ["common.close"]            = "Close",
         ["common.cancel"]           = "Cancel",
@@ -414,11 +422,11 @@ local STRINGS = {
         ["settings.notifications"]  = "Notifications",
         ["settings.configuration"]  = "Configuration",
         ["settings.toggle_key"]     = "Toggle key",
-        ["settings.desc.theme"]     = "colour palette used across the interface",
-        ["settings.desc.language"]  = "interface language, not hub text",
-        ["settings.desc.blur"]      = "softens the game behind the window",
-        ["settings.desc.cursor"]    = "replaces the system pointer while open",
-        ["settings.desc.notifs"]    = "show toast messages in the corner",
+        ["settings.desc.theme"]     = "Colour palette used across the interface",
+        ["settings.desc.language"]  = "Interface language, not hub text",
+        ["settings.desc.blur"]      = "Softens the game behind the window",
+        ["settings.desc.cursor"]    = "Replaces the system pointer while open",
+        ["settings.desc.notifs"]    = "Show toast messages in the corner",
         ["dialog.close_title"]      = "Close %s?",
         ["dialog.close_body"]       = "This shuts the interface down completely. You'll need to run the script again to bring it back.",
         ["keysystem.get_key"]       = "Get key",
@@ -659,8 +667,10 @@ function Nely:GetLanguages() return Nely.Languages end
 
 --==================================================================
 --  COLORED UI
+--
 --  OFF (default): the interface is metallic. Sidebar icons are muted
 --  silver, the active one is platinum, and an enabled toggle is platinum.
+--
 --  ON: those same elements take the CURRENT THEME's accent -- Crimson
 --  turns them red, Frost blue. Not random per-element colours; the one
 --  colour the user chose.
@@ -918,14 +928,17 @@ end
 
 --==================================================================
 --  ICONS
+--
 --  Icons are the Lucide set, mirrored on nlzzpro/nelylib — the same
 --  artwork WindUI uses, so nothing here is hand-drawn or improvised.
 --  Mirroring it means the hub does not depend on someone else's repo
 --  staying up.
+--
 --  Main-v2.lua is a loader that pulls SIX packs on startup (lucide,
 --  solar, craft, geist, sfsymbols, gravity) — seven HTTP round trips
 --  before a single pixel renders. Only the Lucide set is used here,
 --  so the pack is fetched directly: one request, 1,715 icons.
+--
 --  Each icon is a single ImageLabel. The previous build assembled
 --  every glyph from six to eight Frames and UIStrokes, which is what
 --  made them look improvised and cost ~7x the instances.
@@ -996,6 +1009,7 @@ end
 -- V4: every icon slot in the library also accepts a raw asset, so
 -- anywhere you can name a lucide glyph you can hand over a picture
 -- instead -- an item thumbnail, a game logo, a weapon skin.
+--
 -- Passed-through art keeps its own colours. A glyph is a silhouette meant
 -- to be tinted; a photograph tinted to the accent colour just looks
 -- broken, so raw images are flagged and the tinting skips them.
@@ -1038,13 +1052,17 @@ end
 
 --==================================================================
 --  IMAGE RESOLUTION
+--
 --  rbxthumb://type=GameIcon keys off the UNIVERSE id, not the place id.
 --  Feeding it a place id doesn't error — it just returns Roblox's default
 --  placeholder icon, which is exactly what a wrong id looks like.
+--
 --  There is no in-game way to convert one to the other: GetProductInfo
 --  does not carry a UniverseId field. It takes an API call:
 --      apis.roblox.com/universes/v1/places/{placeId}/universe
+--
 --  So entries can supply either, and the cost differs:
+--
 --    UniverseId = 66654133      instant, zero network, always works
 --    PlaceId    = 142823291     one lookup, then cached to disk forever
 --    Image      = "rbxassetid://6500905731"
@@ -1074,8 +1092,10 @@ local function HttpGetJson(url)
     return ok and decoded or nil
 end
 
+--------------------------------------------------------------------
 --  Universe id lookup: queued, staggered, and cached to disk so the
 --  requests only ever happen once per place across every session.
+--------------------------------------------------------------------
 
 local UNIVERSE_CACHE_FILE = "nely_cache/universes.json"
 
@@ -1142,6 +1162,7 @@ local function ProcessUniverseQueue()
     end)
 end
 
+--------------------------------------------------------------------
 
 -- url -> { path = "nely_cache/123.png", asset = "rbxasset://..." }
 -- The path is what makes the entry verifiable; the asset string alone
@@ -1268,7 +1289,9 @@ local function ResolveGameImage(entry, callback)
     end
 end
 
+--------------------------------------------------------------------
 --  KEYBIND STATE (shared across every keybind control)
+--------------------------------------------------------------------
 
 -- Keys a bind will accept. A modifier alone is not a shortcut, and
 -- Unknown is what Roblox reports for input it could not classify.
@@ -1295,6 +1318,7 @@ end
 
 -- Whether a keypress should be ignored because the user is writing, rather
 -- than because the engine happened to mark it handled.
+--
 -- gameProcessedEvent is NOT the same question. It is true for any key the
 -- game or the CoreGui claimed, which for a given place can include perfectly
 -- ordinary letters -- F is game-processed in Murder Mystery 2, so a bind on
@@ -1349,6 +1373,7 @@ local function Ripple(button, zindex)
 end
 
 -- Keep a dragged frame reachable.
+--
 -- Dragging was unbounded, so a window could be pushed entirely outside the
 -- viewport with no way to bring it back -- the same dead end as an
 -- oversized window, just reached by hand instead. The rule is that the
@@ -1682,10 +1707,12 @@ end
 
 --==================================================================
 --  TOOLTIPS
+--
 --  One floating card, reused by every hint in the interface. It hangs
 --  off Root rather than off the row that owns it: a page is a
 --  ScrollingFrame, so a tooltip parented inside one gets clipped at the
 --  page edge exactly when it needs to overhang.
+--
 --  Any element accepts `Info = "text"` and grows a small (i) beside its
 --  name. Nothing is positioned until the card has measured itself, so a
 --  two-word hint and a three-line one both land correctly.
@@ -1955,6 +1982,7 @@ end
 --    Image   = "rbxassetid://..."  a picture instead of the small glyph
 --    PlaceId = 142823291           that game's thumbnail, resolved for you
 --    Align   = "center"            centres the artwork and the text
+--
 --  Image and PlaceId imply Align = "center" unless you say otherwise: a
 --  96px picture pinned to the left edge with text beside it is a different
 --  layout, and this card is not built for it.
@@ -2222,10 +2250,12 @@ end
 
 --==================================================================
 --  WATERMARK
+--
 --  A small always-on-top strip: your label, then live FPS, ping and
 --  clock. Drag it anywhere. It is independent of the window, so it
 --  stays put while the hub is minimised — which is the point, since
 --  that is when you actually want to see your framerate.
+--
 --  FPS is a one-second rolling count rather than 1/DeltaTime, which
 --  jitters far too much to read. Ping comes from Stats and is only
 --  polled every second; it is a server round trip, not a per-frame
@@ -2386,11 +2416,14 @@ function Nely:CreateWindow(opts)
     local subtitle  = opts.Subtitle  or ""
     local toggleKey = opts.ToggleKey or Enum.KeyCode.RightShift
 
+    ----------------------------------------------------------------
     -- Responsive sizing
+    --
     -- A fixed 660x470 is fine on a desktop monitor and enormous on a
     -- phone, where it can exceed the screen. Size is derived from the
     -- viewport instead, then clamped, so the same script is usable on
     -- both without a separate mobile build.
+    ----------------------------------------------------------------
 
     local viewport = workspace.CurrentCamera
         and workspace.CurrentCamera.ViewportSize
@@ -2405,6 +2438,7 @@ function Nely:CreateWindow(opts)
     -- Deliberately smaller than the last build. Rows grew at the same
     -- time, so a tab holding two elements now fills its page instead of
     -- leaving a dead area below them.
+    --
     -- A caller's Size is a PREFERENCE, not permission to exceed the screen.
     -- This used to read `opts.Size or <responsive>`, which meant every hub
     -- that passed an explicit size (760x540, 720x520, 680x480) skipped the
@@ -2413,6 +2447,7 @@ function Nely:CreateWindow(opts)
     -- top and bottom -- putting the topbar, and with it close, minimise and
     -- the drag handle, above the top edge where it cannot be reached at
     -- all. Mobile users were left with a window they could not shut.
+    --
     -- So the preference is honoured only up to what actually fits.
     local marginX = compact and 12 or 40
     local marginY = compact and 12 or 40
@@ -2448,6 +2483,7 @@ function Nely:CreateWindow(opts)
     -- Rows are taller on desktop than the previous build. Paired with the
     -- smaller window above, a tab with one or two elements now reads as
     -- full rather than mostly empty.
+    --
     -- Density = "compact" trades that breathing room for reach: a settings
     -- page with twenty rows stops needing three screens of scrolling. The
     -- rows keep their internals, they just lose vertical padding.
@@ -2500,14 +2536,18 @@ function Nely:CreateWindow(opts)
         math.max(maxSize.Y, winSize.Y.Offset)
     )
 
+    ----------------------------------------------------------------
     -- Shell
+    ----------------------------------------------------------------
 
     -- V4 glass shell.
+    --
     -- Roblox has no backdrop blur for GUI, so "glass" is built out of what
     -- it does have: a translucent base so the game reads through, a
     -- diagonal accent wash for depth, and a one pixel top highlight that
     -- catches the eye the way a lit edge does. Three cheap layers beat one
     -- flat panel, and none of them cost a frame of work to maintain.
+    --
     -- Glass = 0 gives the old opaque look; the default leans translucent.
     local glass = opts.Glass
     if glass == nil then glass = 0.14 end
@@ -2533,13 +2573,16 @@ function Nely:CreateWindow(opts)
     Shadow(shell, 42, 0.72, 18)
     Window.Frame = shell
 
+    ----------------------------------------------------------------
     -- FitScale -- the WindUI-style mobile fit
+    --
     -- The shell is always built at its full design size (wantW/wantH).
     -- Rather than shrinking that Size to fit a small viewport -- which is
     -- what used to force the SidebarWidth cap, since a squeezed frame
     -- meant a squeezed sidebar too -- one UIScale on the shell scales the
     -- entire subtree together. Sidebar, rows, text and icons all keep
     -- their real proportions; only their footprint on screen shrinks.
+    ----------------------------------------------------------------
 
     local shellScale = New("UIScale", { Scale = 1, Parent = shell })
 
@@ -2661,7 +2704,9 @@ function Nely:CreateWindow(opts)
         }),
     })
 
+    ----------------------------------------------------------------
     -- Topbar
+    ----------------------------------------------------------------
 
     local topbar = New("Frame", {
         Name                   = "Topbar",
@@ -2680,14 +2725,18 @@ function Nely:CreateWindow(opts)
         Parent           = topbar,
     })
 
+    ----------------------------------------------------------------
     -- Brand block
+    --
     -- A supplied logo gets real presence: 34px square with no tile
     -- behind it, which is roughly the size a wordmark occupies in the
     -- tools this is modelled on. Without a logo it falls back to the
     -- old 26px accent tile with the hub initial, because a lone letter
     -- blown up to 34px just looks like a typo.
+    --
     -- LogoSize overrides the square. LogoStyle = "tile" keeps the
     -- accent square under the artwork if that is the look you want.
+    ----------------------------------------------------------------
 
     local hasLogo   = opts.Logo ~= nil and opts.Logo ~= ""
     local plainLogo = hasLogo and opts.LogoStyle ~= "tile"
@@ -2753,16 +2802,20 @@ function Nely:CreateWindow(opts)
         })
     end
 
+    ----------------------------------------------------------------
     -- Current-game badge
+    --
     -- Sits beside the hub name so you can see at a glance which place
     -- the script is running in. The name comes from MarketplaceService
     -- and the thumbnail from the same universe resolver the game grid
     -- uses, so this costs one lookup that is already cached.
+    --
     -- It lives on the LEFT, immediately after the title, separated by a
     -- hairline. That is where the free width is: the right-hand side has
     -- to share with the credit pill and three window controls, which is
     -- what was squeezing long place names down to an ellipsis.
     -- GameBadge = "right" puts it back beside the credit.
+    ----------------------------------------------------------------
 
     -- CONTROLS_W has to clear every window control. Three 28px buttons at
     -- -14 / -48 / -82 means the leftmost one ends at -110, so anything that
@@ -2871,13 +2924,16 @@ function Nely:CreateWindow(opts)
 
         Window.GameBadge = badge
 
+        ------------------------------------------------------------
         -- Fitting the place name
+        --
         -- This used to cut at a fixed character count, which is why a
         -- long game name came out as three dots however much room the
         -- window actually had. Now it measures: everything else on the
         -- topbar reports its own width, the badge takes what is left,
         -- and it only ellipsises when the text genuinely does not fit.
         -- Recomputed whenever the window is resized.
+        ------------------------------------------------------------
 
         local fullName   = ""
         local lastFitted = nil
@@ -2961,6 +3017,7 @@ function Nely:CreateWindow(opts)
         end)
 
         -- Which game this badge describes.
+        --
         -- It used to be game.PlaceId unconditionally, which is wrong for a
         -- script written for one specific game: run the Natural Disaster
         -- script anywhere else and the badge proudly showed whatever place
@@ -3028,7 +3085,9 @@ function Nely:CreateWindow(opts)
 
     -- CONTROLS_W above has to stay in step with the leftmost button here.
 
+    ----------------------------------------------------------------
     -- Credit pill
+    ----------------------------------------------------------------
 
     if opts.Credit then
         local credit = New("TextButton", {
@@ -3102,7 +3161,9 @@ function Nely:CreateWindow(opts)
         end)
     end
 
+    ----------------------------------------------------------------
     -- Sidebar
+    ----------------------------------------------------------------
 
     local sidebar = New("Frame", {
         Name                   = "Sidebar",
@@ -3142,12 +3203,16 @@ function Nely:CreateWindow(opts)
         Parent                 = sidebar,
     }, { List(6), Pad(0, 10, 0, 0) })
 
+    ----------------------------------------------------------------
     -- Player card
+    --
     -- Anchored to the bottom of the sidebar: headshot, display name and
     -- @username. It survives the rail by dropping to just the avatar,
     -- which is the one part still recognisable at 58px wide.
+    --
     -- The headshot comes from rbxthumb://, so it needs no HTTP call and
     -- no executor support — Roblox resolves it internally.
+    ----------------------------------------------------------------
 
     local PLAYER_CARD_H = 62
     local playerCard, playerAvatar, playerName, playerSub
@@ -3256,7 +3321,9 @@ function Nely:CreateWindow(opts)
         end)
     end
 
+    ----------------------------------------------------------------
     -- Content host
+    ----------------------------------------------------------------
 
     local content = New("Frame", {
         Name                   = "Content",
@@ -3268,11 +3335,14 @@ function Nely:CreateWindow(opts)
         Parent                 = shell,
     })
 
+    ----------------------------------------------------------------
     -- Sidebar rail
+    --
     -- Collapses the sidebar down to its icons and gives the page the
     -- reclaimed width. Tab names move into tooltips rather than being
     -- dropped, so a railed sidebar is still navigable by someone who
     -- doesn't recognise every glyph yet.
+    ----------------------------------------------------------------
 
     local RAIL_W  = 58
     local railed  = false
@@ -3369,7 +3439,9 @@ function Nely:CreateWindow(opts)
         task.defer(function() ApplyRail(true, false) end)
     end
 
+    ----------------------------------------------------------------
     -- Resize grip
+    ----------------------------------------------------------------
 
     local grip = New("TextButton", {
         Name                   = "ResizeGrip",
@@ -3466,7 +3538,9 @@ function Nely:CreateWindow(opts)
     end)
     table.insert(Nely.Connections, resizeEnd)
 
+    ----------------------------------------------------------------
     -- Minimize orb
+    ----------------------------------------------------------------
 
     -- Centre-anchored, unlike the rest of the left-edge furniture. The open
     -- and minimize animations scale the orb, and a scale about a left edge
@@ -3536,14 +3610,19 @@ function Nely:CreateWindow(opts)
         end
     end
 
+    ------------------------------------------------------------
     -- What the orb shows
+    --
     -- By default it is the current place's thumbnail, so a collapsed
     -- window still says which game it belongs to. Two overrides:
+    --
     --   OrbImage   = "138846809155036"   -- a fixed asset, e.g. your logo
     --   OrbPlaceId = 142823291           -- a fixed game's icon
     --   OrbImage   = false               -- no image, brand mark only
+    --
     -- OrbPlaceId is the one a single-game script wants: the icon then
     -- stays that game's icon no matter where the script is executed.
+    ------------------------------------------------------------
 
     if opts.OrbImage == false then
         -- Nothing to resolve; the brand mark underneath is the whole orb.
@@ -3597,9 +3676,13 @@ function Nely:CreateWindow(opts)
     end)
     table.insert(Nely.Connections, haloConn)
 
+    ----------------------------------------------------------------
     -- Open / minimize / close
+    ----------------------------------------------------------------
 
+    ----------------------------------------------------------------
     -- Why these animate a UIScale instead of Size
+    --
     -- Tweening shell.Size looked wrong, and it is worth being precise
     -- about why. The shell does not clip, and its children are only
     -- partly scale-sized: the sidebar is a fixed 168px wide, the topbar
@@ -3608,6 +3691,7 @@ function Nely:CreateWindow(opts)
     -- backdrop out from under content that stayed exactly where it was,
     -- and on close, when the target was zero, the whole interface was
     -- left hanging in space around a frame with no size at all.
+    --
     -- UIScale scales the entire subtree, text and fixed offsets and all,
     -- so the window behaves like one object. `shellScale` is the same
     -- UIScale RecomputeFitScale() drives above -- every target here is
@@ -3615,6 +3699,7 @@ function Nely:CreateWindow(opts)
     -- in / collapses to orb" animation still reads correctly at whatever
     -- size the window is currently fit to instead of snapping to full
     -- desktop size for one frame on a phone.
+    ----------------------------------------------------------------
 
     local orbScale = New("UIScale", { Scale = 1, Parent = orb })
 
@@ -3654,6 +3739,7 @@ function Nely:CreateWindow(opts)
 
         -- Grow out of wherever it collapsed to, then settle home. Position
         -- and scale run on the same clock so it reads as one movement.
+        --
         -- Coming back from the orb the shell is already parked on top of it
         -- at 5%. On a first open there is nothing to grow from, so it starts
         -- just under full size: enough for the spring to have something to
@@ -3815,12 +3901,15 @@ function Nely:CreateWindow(opts)
         table.insert(Cursor.Targets, orb)
     end
 
+    ----------------------------------------------------------------
     -- Tab sections
+    --
     -- A labelled group in the sidebar that owns its own tabs, so a hub
     -- with twenty scripts can file them under headings instead of one
     -- flat list. Sections and loose tabs share a single order counter,
     -- which is what keeps a section's tabs sitting under its heading
     -- rather than drifting to the bottom of the list.
+    ----------------------------------------------------------------
 
     function Window:CreateTabSection(sectionOpts)
         sectionOpts = type(sectionOpts) == "string"
@@ -3886,9 +3975,12 @@ function Nely:CreateWindow(opts)
         return Section
     end
 
+    ----------------------------------------------------------------
     -- Tabs
+    ----------------------------------------------------------------
 
     -- V4 tab hues.
+    --
     -- A sidebar of identically grey glyphs gives the eye nothing to aim
     -- at, so every tab gets its own colour. Pass IconColor to choose, or
     -- let this walk the hue wheel by golden ratio, which spaces any number
@@ -4226,18 +4318,23 @@ function Nely:CreateWindow(opts)
         end)
         btn.MouseLeave:Connect(HideTip)
 
+        ------------------------------------------------------------
         -- Element scaffolding
+        ------------------------------------------------------------
 
         local function NextOrder()
             Tab._order = Tab._order + 1
             return Tab._order
         end
 
+        ------------------------------------------------------------
         -- Info dot
+        --
         -- Sits immediately after an element's name, so it has to know how
         -- wide that name rendered. GetTextSize measures it without waiting
         -- for a layout pass, which matters because AbsoluteSize is still
         -- zero on the frame an element is built in.
+        ------------------------------------------------------------
 
         local function InfoDot(row, labelInst, text, zindex)
             if not text or text == "" or not labelInst then return nil end
@@ -4287,11 +4384,14 @@ function Nely:CreateWindow(opts)
             return dot
         end
 
+        ------------------------------------------------------------
         -- Locking
+        --
         -- A greyed-out row has to stop responding, not just look dim. The
         -- scrim handles the look; hiding the interactive children is what
         -- actually blocks input, since a TextButton keeps receiving clicks
         -- even with Active off.
+        ------------------------------------------------------------
 
         local function Lockable(row, api, radius)
             local scrim = New("Frame", {
@@ -4415,30 +4515,10 @@ function Nely:CreateWindow(opts)
             if nameKey then name = L(nameKey) end
             if descKey then description = L(descKey) end
             local hasDesc = description and description ~= ""
-
-            if not hasDesc then
-                local nameLabel = New("TextLabel", {
-                    Size                   = UDim2.new(1, -leftPad - 134, 0, 16),
-                    Position               = UDim2.new(0, leftPad, 0.5, 0),
-                    AnchorPoint            = Vector2.new(0, 0.5),
-                    BackgroundTransparency = 1,
-                    Text                   = name,
-                    TextColor3             = theme.Text,
-                    TextSize               = 13,
-                    Font                   = Enum.Font.GothamMedium,
-                    TextXAlignment         = Enum.TextXAlignment.Left,
-                    TextTruncate           = Enum.TextTruncate.AtEnd,
-                    ZIndex                 = 18,
-                    Parent                 = row,
-                })
-                if nameKey then BindText(nameLabel, "Text", nameKey) end
-                InfoDot(row, nameLabel, info, 19)
-                return
-            end
-
             local nameLabel = New("TextLabel", {
                 Size                   = UDim2.new(1, -leftPad - 134, 0, 16),
-                Position               = UDim2.new(0, leftPad, 0, 17),
+                Position               = UDim2.new(0, leftPad, 0.5, hasDesc and -11 or 0),
+                AnchorPoint            = Vector2.new(0, 0.5),
                 BackgroundTransparency = 1,
                 Text                   = name,
                 TextColor3             = theme.Text,
@@ -4451,61 +4531,43 @@ function Nely:CreateWindow(opts)
             })
             if nameKey then BindText(nameLabel, "Text", nameKey) end
             InfoDot(row, nameLabel, info, 19)
-
-            -- Wraps instead of cutting off with "..." -- the row grows to
-            -- fit, capped at 3 lines so one very long string can't turn a
-            -- toggle into a wall of text.
-            local descTop  = 17 + 16 + 6
-            local lineH    = 14
-            local maxLines = 3
-            local descWidth = math.max(60, (row.Parent and row.Parent.AbsoluteSize.X or 300) - leftPad - 134)
-
-            local descLabel = New("TextLabel", {
-                Size                   = UDim2.new(1, -leftPad - 134, 0, lineH),
-                Position               = UDim2.new(0, leftPad, 0, descTop),
-                BackgroundTransparency = 1,
-                Text                   = description,
-                TextColor3             = theme.TextDim,
-                TextSize               = 11,
-                Font                   = Enum.Font.Gotham,
-                TextXAlignment         = Enum.TextXAlignment.Left,
-                TextYAlignment         = Enum.TextYAlignment.Top,
-                TextWrapped            = true,
-                TextTruncate           = Enum.TextTruncate.AtEnd,
-                ZIndex                 = 18,
-                Parent                 = row,
-            })
-            if descKey then BindText(descLabel, "Text", descKey) end
-
-            local baseRowH = row.Size.Y.Offset
-            local function fit()
-                local ok, bounds = pcall(function()
-                    return TextService:GetTextSize(descLabel.Text, 11, Enum.Font.Gotham,
-                        Vector2.new(descWidth, 4096))
-                end)
-                local lines = ok and math.clamp(math.ceil(bounds.Y / lineH), 1, maxLines) or 1
-                local descH = lines * lineH
-                descLabel.Size = UDim2.new(1, -leftPad - 134, 0, descH)
-                local neededH = descTop + descH + 17
-                row.Size = UDim2.new(1, 0, 0, math.max(baseRowH, neededH))
+            if hasDesc then
+                local descLabel = New("TextLabel", {
+                    Size                   = UDim2.new(1, -leftPad - 134, 0, 14),
+                    Position               = UDim2.new(0, leftPad, 0.5, 10),
+                    AnchorPoint            = Vector2.new(0, 0.5),
+                    BackgroundTransparency = 1,
+                    Text                   = description,
+                    TextColor3             = theme.TextDim,
+                    TextSize               = 11,
+                    Font                   = Enum.Font.Gotham,
+                    TextXAlignment         = Enum.TextXAlignment.Left,
+                    TextTruncate           = Enum.TextTruncate.AtEnd,
+                    ZIndex                 = 18,
+                    Parent                 = row,
+                })
+                if descKey then BindText(descLabel, "Text", descKey) end
             end
-            fit()
-            if descKey then BindText(descLabel, "Text", descKey) end
         end
 
+        ------------------------------------------------------------
         -- Containers: groups and columns
+        --
         -- Every element constructor below parents straight to `page`, and
         -- there are two dozen of them. Rather than thread a container
         -- argument through all of them, Adopt snapshots the page's children,
         -- runs the constructor, and moves whatever is new into the container.
+        --
         -- That is deliberately not a ChildAdded hook: with deferred signal
         -- behaviour, ChildAdded fires at the end of the resumption cycle
         -- rather than the moment Parent is assigned, so the element would
         -- already have been handed back to the caller before we saw it.
         -- Comparing before and after is immune to that.
+        --
         -- Because the constructors always target `page`, this nests: a group
         -- built inside a column is adopted by the column, and its own
         -- children are adopted by the group.
+        ------------------------------------------------------------
 
         local ELEMENT_METHODS = {
             "CreateSection", "CreateDivider", "CreateParagraph", "CreateButton",
@@ -4545,10 +4607,13 @@ function Nely:CreateWindow(opts)
             return proxy
         end
 
+        ------------------------------------------------------------
         -- Group
+        --
         -- A titled card that owns its rows. Collapsing is driven by the
         -- body's AutomaticSize rather than a stored height, so a group whose
         -- contents grow later still opens to the right size.
+        ------------------------------------------------------------
 
         function Tab:CreateGroup(cfg)
             cfg = type(cfg) == "string" and { Title = cfg } or (cfg or {})
@@ -4664,12 +4729,16 @@ function Nely:CreateWindow(opts)
             return group
         end
 
+        ------------------------------------------------------------
         -- Columns
+        --
         -- Splits the page horizontally. Each column is its own container,
         -- so a settings page can put the switches on the left and the
         -- graphs on the right instead of running one long ribbon.
+        --
         -- Falls back to a single column on a compact window: two 130px
         -- columns are worse than one readable one.
+        ------------------------------------------------------------
 
         function Tab:CreateColumns(cfg)
             cfg = type(cfg) == "number" and { Count = cfg } or (cfg or {})
@@ -4718,7 +4787,9 @@ function Nely:CreateWindow(opts)
             return columns
         end
 
+        ------------------------------------------------------------
         -- Static Card
+        --
         -- General-purpose information card: icon or image, title, an
         -- optional description, an optional badge, an optional content/
         -- value block, and an accent colour used sparingly (icon tile +
@@ -4726,6 +4797,7 @@ function Nely:CreateWindow(opts)
         -- A first-class element like everything else in this file -- just
         -- another Tab method building into `page` -- so CreateGroup/
         -- CreateColumns adopt it automatically via ELEMENT_METHODS below.
+        ------------------------------------------------------------
 
         function Tab:CreateStaticCard(cfg)
             cfg = cfg or {}
@@ -4921,7 +4993,9 @@ function Nely:CreateWindow(opts)
             return api
         end
 
+        ------------------------------------------------------------
         -- Viewport Card
+        --
         -- A real ViewportFrame (its own WorldModel + dedicated Camera, not
         -- shared with the main 3D world) that renders one model at a time:
         -- clones whatever is handed to it (a Model, or a single BasePart
@@ -4935,6 +5009,7 @@ function Nely:CreateWindow(opts)
         -- slow auto-rotation and click-drag rotation share the same
         -- current-model reference, and :Destroy() (or a later :Set())
         -- tears down the previous model/camera connections cleanly.
+        ------------------------------------------------------------
 
         function Tab:CreateViewportCard(cfg)
             cfg = cfg or {}
@@ -5127,7 +5202,9 @@ function Nely:CreateWindow(opts)
             return api
         end
 
+        ------------------------------------------------------------
         -- Section
+        ------------------------------------------------------------
 
         function Tab:CreateSection(name, nameKey)
             local holder = New("Frame", {
@@ -5184,7 +5261,9 @@ function Nely:CreateWindow(opts)
             return { Destroy = function() holder:Destroy() end }
         end
 
+        ------------------------------------------------------------
         -- Paragraph
+        ------------------------------------------------------------
 
         function Tab:CreateParagraph(cfg)
             cfg = cfg or {}
@@ -5238,7 +5317,9 @@ function Nely:CreateWindow(opts)
             }
         end
 
+        ------------------------------------------------------------
         -- Button
+        ------------------------------------------------------------
 
         function Tab:CreateButton(cfg)
             cfg = cfg or {}
@@ -5280,7 +5361,9 @@ function Nely:CreateWindow(opts)
             return api
         end
 
+        ------------------------------------------------------------
         -- Toggle
+        ------------------------------------------------------------
 
         function Tab:CreateToggle(cfg, flag)
             cfg = cfg or {}
@@ -5415,7 +5498,9 @@ function Nely:CreateWindow(opts)
             return api
         end
 
+        ------------------------------------------------------------
         -- Slider
+        ------------------------------------------------------------
 
         function Tab:CreateSlider(cfg, flag)
             cfg = cfg or {}
@@ -5571,7 +5656,9 @@ function Nely:CreateWindow(opts)
             return api
         end
 
+        ------------------------------------------------------------
         -- Input
+        ------------------------------------------------------------
 
         function Tab:CreateInput(cfg, flag)
             cfg = cfg or {}
@@ -5628,7 +5715,9 @@ function Nely:CreateWindow(opts)
             return api
         end
 
+        ------------------------------------------------------------
         -- Dropdown
+        ------------------------------------------------------------
 
         function Tab:CreateDropdown(cfg, flag)
             cfg = cfg or {}
@@ -5909,26 +5998,35 @@ function Nely:CreateWindow(opts)
             return api
         end
 
+        ------------------------------------------------------------
         -- Keybind
+        ------------------------------------------------------------
 
         -- Mode decides what the key actually does, and the chip in front of
         -- the key shows which one is live:
+        --
         --   Press   fires the callback once per press          (the default,
         --           and what every existing script already expects)
         --   Hold    fires Callback(true) down, Callback(false) up
         --   Toggle  flips a state and fires Callback(state)
+        --
         -- Clicking the chip cycles it, so a hub gets all three without
         -- shipping three separate controls.
+        ------------------------------------------------------------
         -- Keybind
+        --
         -- One job: hold a key, fire the callback once when it is pressed.
+        --
         -- The Press / Hold / Toggle selector is gone. It put a three-way
         -- decision in front of the user for something the hub author had
         -- already decided, and the extra chip made one control read as two
         -- ([ HOLD ][ E ]). A hub wanting toggle behaviour keeps its own
         -- boolean in the callback -- it always did anyway.
+        --
         -- Mode, LockMode and OnModeChanged are still accepted and ignored
         -- so hubs written against the old signature keep loading; they
         -- render nothing.
+        ------------------------------------------------------------
 
         function Tab:CreateKeybind(cfg, flag)
             cfg = cfg or {}
@@ -5955,20 +6053,25 @@ function Nely:CreateWindow(opts)
                 Parent           = row,
             }, { Corner(8), Stroke(theme.Border, 1, 0.55) })
 
+            ----------------------------------------------------------
             -- Listening
+            --
             -- Entering listening mode must never be a trap. Every exit
             -- except a real keyboard key leaves the existing bind alone:
+            --
             --   any mouse button   cancel, restore   (never binds a mouse)
             --   click this pill    cancel, restore
             --   Escape             cancel, restore   (never binds Escape)
             --   a valid key        assign
             --   Backspace/Delete   clear to None, deliberately
+            --
             -- Event ORDER is what makes this work. InputBegan fires on
             -- mouse DOWN and MouseButton1Click on mouse UP, so:
             --   opening   down (not listening -> ignored), up -> start
             --   cancelling down (listening -> cancel); the up that follows
             --             lands on this same pill and must NOT re-open it,
             --             hence the short per-pill suppression window.
+            ----------------------------------------------------------
 
             local listening = false
             local restore   = current
@@ -6096,6 +6199,7 @@ function Nely:CreateWindow(opts)
                 end
 
                 -- Not listening: this is the bind firing. Once per press.
+                --
                 -- Deliberately not `if processed then return end`. See
                 -- TypingNow: that test silently kills any key the game also
                 -- listens for, which is how a bind could look set and do
@@ -6141,7 +6245,9 @@ function Nely:CreateWindow(opts)
             return api
         end
 
+        ------------------------------------------------------------
         -- Label
+        ------------------------------------------------------------
 
         function Tab:CreateLabel(cfg)
             cfg = type(cfg) == "string" and { Text = cfg } or (cfg or {})
@@ -6179,7 +6285,9 @@ function Nely:CreateWindow(opts)
             }
         end
 
+        ------------------------------------------------------------
         -- Space
+        ------------------------------------------------------------
 
         function Tab:CreateSpace(height)
             local spacer = New("Frame", {
@@ -6192,7 +6300,9 @@ function Nely:CreateWindow(opts)
             return { Destroy = function() spacer:Destroy() end }
         end
 
+        ------------------------------------------------------------
         -- Progress bar
+        ------------------------------------------------------------
 
         function Tab:CreateProgressBar(cfg)
             cfg = cfg or {}
@@ -6263,7 +6373,9 @@ function Nely:CreateWindow(opts)
             return api
         end
 
+        ------------------------------------------------------------
         -- Colorpicker
+        ------------------------------------------------------------
 
         function Tab:CreateColorpicker(cfg, flag)
             cfg = cfg or {}
@@ -6481,19 +6593,24 @@ function Nely:CreateWindow(opts)
             return api
         end
 
+        ------------------------------------------------------------
         -- Curve editor
+        --
         -- A draggable cubic bezier, for anything shaped like an easing
         -- response: aim smoothing, sensitivity ramps, fade profiles. The
         -- ends are pinned at (0,0) and (1,1); the two handles in between
         -- are what you drag.
+        --
         -- There is no line primitive in Roblox GUI, so the curve is drawn
         -- as a run of thin rotated Frames sampled along the bezier. 34
         -- segments is the point where the joins stop being visible at this
         -- size without wasting instances.
+        --
         -- :Sample(x) is the part a hub actually calls at runtime. A bezier
         -- is parametric, so x is not t; solving for t by bisection is
         -- cheap here and avoids the lookup table a shipping easing curve
         -- would otherwise need.
+        ------------------------------------------------------------
 
         local CURVE_SEGMENTS = 34
 
@@ -6767,7 +6884,9 @@ function Nely:CreateWindow(opts)
             return api
         end
 
+        ------------------------------------------------------------
         -- Code block
+        ------------------------------------------------------------
 
         function Tab:CreateCode(cfg)
             cfg = type(cfg) == "string" and { Code = cfg } or (cfg or {})
@@ -6856,15 +6975,21 @@ function Nely:CreateWindow(opts)
             }
         end
 
+        ------------------------------------------------------------
         -- Game grid  (script-hub specific)
+        ------------------------------------------------------------
 
+        ------------------------------------------------------------
         -- Item grid
+        --
         -- Pick-by-picture: a wrapping grid of artwork cards. Used by the
         -- skin changer and the crosshair picker, where the names alone
         -- ("Kitty v2", "Clean Kitty") tell you nothing.
+        --
         -- Cards render in batches so a 300-item list does not stall the
         -- frame, and a render token means a re-Set part way through a
         -- batch abandons the old run instead of interleaving with it.
+        ------------------------------------------------------------
 
         function Tab:CreateItemGrid(cfg)
             cfg = cfg or {}
@@ -6968,12 +7093,14 @@ function Nely:CreateWindow(opts)
                 if item.Image and item.Image ~= "" then
                     -- ImageTransparency stays at 0 for the lifetime of this
                     -- label, and that is not a style choice.
+                    --
                     -- Roblox will not download a fully transparent image.
                     -- The old code created the label at transparency 1 and
                     -- had the fallback set it back to 1 on failure, which
                     -- meant the "it failed" branch guaranteed it could
                     -- never succeed: twenty of twenty-five crosshairs sat
                     -- as dead letters forever, even after scrolling to them.
+                    --
                     -- So only the LETTER is toggled. An undecoded image
                     -- draws nothing, so showing both is safe, and the
                     -- letter simply disappears once the artwork arrives.
@@ -7474,7 +7601,9 @@ function Nely:CreateWindow(opts)
             }
         end
 
+        ------------------------------------------------------------
         -- Profile card
+        ------------------------------------------------------------
 
         local function AvatarUrl(userId, size)
             return ("rbxthumb://type=AvatarHeadShot&id=%d&w=%d&h=%d")
@@ -7614,7 +7743,9 @@ function Nely:CreateWindow(opts)
             return { Instance = card, Destroy = function() card:Destroy() end }
         end
 
+        ------------------------------------------------------------
         -- Server card
+        ------------------------------------------------------------
 
         function Tab:CreateServerCard()
             local statRow = New("Frame", {
@@ -7806,7 +7937,9 @@ function Nely:CreateWindow(opts)
             }
         end
 
+        ------------------------------------------------------------
         -- Friends card
+        ------------------------------------------------------------
 
         function Tab:CreateFriendsCard()
             local card = New("Frame", {
@@ -7966,7 +8099,9 @@ function Nely:CreateWindow(opts)
             return { Instance = card, Destroy = function() card:Destroy() end }
         end
 
+        ------------------------------------------------------------
         -- Discord card
+        ------------------------------------------------------------
 
         function Tab:CreateDiscordCard(cfg)
             cfg = cfg or {}
@@ -8127,10 +8262,13 @@ function Nely:CreateWindow(opts)
         return Tab
     end
 
+    ----------------------------------------------------------------
     -- Search
+    --
     -- Walks every element row in every tab. Rows are matched on the text
     -- of their descendant TextLabels rather than a registry, so elements
     -- added later are searchable without registering anything.
+    ----------------------------------------------------------------
 
     if opts.SearchBar ~= false then
         -- SearchBar = "topbar" floats the field across the top of the window
@@ -8222,7 +8360,9 @@ function Nely:CreateWindow(opts)
 
         LayoutTabList()
 
+        ------------------------------------------------------------
         -- Live cross-tab search
+        --
         -- The old version of this box only filtered rows WITHIN whichever
         -- tab happened to already be open -- useless for finding a control
         -- that lives on a different tab, which is the entire point of a
@@ -8237,6 +8377,7 @@ function Nely:CreateWindow(opts)
         -- would show you if you clicked there yourself, so toggling it from
         -- here and toggling the original are the same action by
         -- construction, not two things kept in sync.
+        ------------------------------------------------------------
 
         local function EntryText(row)
             -- The first non-empty TextLabel is the control's own name;
@@ -8482,16 +8623,21 @@ function Nely:CreateWindow(opts)
         end)
     end
 
+    ----------------------------------------------------------------
     -- Command palette
+    --
     -- Ctrl+K anywhere in the game. Type, and it searches every row in
     -- every tab at once, not just the tab you are looking at. Pick one
     -- and it switches tab, scrolls the row into view and pulses it.
+    --
     -- The index is built when the palette opens rather than kept in
     -- sync, because rows come and go (groups collapse, hubs add tabs
     -- after load) and a stale registry would point at destroyed
     -- instances. Walking a few hundred frames once per open is free.
+    --
     -- Matching is subsequence, not substring: "aimf" finds "Aim field
     -- of view". Consecutive hits score higher so exact prefixes win.
+    ----------------------------------------------------------------
 
     local paletteOpen = false
 
@@ -8579,7 +8725,9 @@ function Nely:CreateWindow(opts)
             Parent                 = box,
         }, { List(2) })
 
+        ------------------------------------------------------------
         -- Index
+        ------------------------------------------------------------
 
         local entries, shown, cursor = {}, {}, 1
 
@@ -8651,7 +8799,9 @@ function Nely:CreateWindow(opts)
             return score - (#haystack * 0.05)
         end
 
+        ------------------------------------------------------------
         -- Jump
+        ------------------------------------------------------------
 
         local function Pulse(row)
             local stroke = row:FindFirstChildOfClass("UIStroke")
@@ -8696,7 +8846,9 @@ function Nely:CreateWindow(opts)
             end)
         end
 
+        ------------------------------------------------------------
         -- Rendering
+        ------------------------------------------------------------
 
         local rowButtons = {}
 
@@ -8783,7 +8935,9 @@ function Nely:CreateWindow(opts)
             Highlight()
         end
 
+        ------------------------------------------------------------
         -- Open / close
+        ------------------------------------------------------------
 
         local function OpenPalette()
             if paletteOpen then return end
@@ -8843,11 +8997,14 @@ function Nely:CreateWindow(opts)
         function Window:ClosePalette() ClosePalette() end
     end
 
+    ----------------------------------------------------------------
     -- Config persistence
+    --
     -- Flags are the source of truth, so anything with a flag persists
     -- without registering a save handler. Elements expose :Set, and the
     -- loader calls it, so restoring a value fires its callback exactly
     -- as a user click would — no divergence between the two paths.
+    ----------------------------------------------------------------
 
     local configFolder = opts.Folder or "NelyLib"
     Window.Elements = Window.Elements or {}
@@ -8928,7 +9085,9 @@ function Nely:CreateWindow(opts)
         return names
     end
 
+    ----------------------------------------------------------------
     -- Prebuilt home tab
+    ----------------------------------------------------------------
 
     function Window:CreateHomeTab(homeOpts)
         homeOpts = homeOpts or {}
@@ -8953,7 +9112,9 @@ function Nely:CreateWindow(opts)
         return Home
     end
 
+    ----------------------------------------------------------------
     -- Settings tab (opt in with Settings = true)
+    ----------------------------------------------------------------
 
     function Window:CreateSettingsTab(cfg)
         cfg = cfg or {}
@@ -9069,7 +9230,9 @@ function Nely:CreateWindow(opts)
         end)
     end
 
+    ----------------------------------------------------------------
     -- Loading screen
+    ----------------------------------------------------------------
 
     if opts.LoadingEnabled ~= false then
         shell.Visible = false
@@ -9121,11 +9284,14 @@ function Nely:CreateWindow(opts)
                 })),
         })
 
+        ------------------------------------------------------------
         -- Logo, and the ring that sweeps around it
+        --
         -- The ring is a UIStroke with a UIGradient inside it. Rotating
         -- the gradient sweeps the visible part of the stroke around the
         -- circle, which gives a comet-tail spinner without needing a
         -- spinner image — nothing to upload, nothing to fail to load.
+        ------------------------------------------------------------
 
         local ringSize = 78
 
@@ -9187,7 +9353,9 @@ function Nely:CreateWindow(opts)
         -- coloured square inside a ring.
         BrandMark(mark, title, opts.Logo, 26, 16, 803, opts.LogoStyle ~= "tile")
 
+        ------------------------------------------------------------
         -- Text
+        ------------------------------------------------------------
 
         New("TextLabel", {
             Size                   = UDim2.new(1, 0, 0, 20),
@@ -9213,7 +9381,9 @@ function Nely:CreateWindow(opts)
             Parent                 = splash,
         })
 
+        ------------------------------------------------------------
         -- Progress
+        ------------------------------------------------------------
 
         local bar = New("Frame", {
             Size             = UDim2.new(1, -64, 0, 4),
@@ -9254,7 +9424,9 @@ function Nely:CreateWindow(opts)
             Parent                 = splash,
         })
 
+        ------------------------------------------------------------
         -- Run it
+        ------------------------------------------------------------
 
         Tween(splashScale, { Scale = 1 }, EASE.Spring)
 
@@ -9331,9 +9503,11 @@ end
 
 --==================================================================
 --  KEY SYSTEM
+--
 --  Gate a script behind a key. Keys can be a fixed list or fetched from
 --  a URL that returns the key as plain text. Saves on success so the
 --  prompt only appears once per machine.
+--
 --  Worth being clear about what this is: client-side gating. Anyone who
 --  can read the script can read past it. It's for distribution control,
 --  not security — treat it that way.
