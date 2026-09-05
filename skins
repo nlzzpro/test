@@ -36,9 +36,9 @@ return {
     {
     Class = "Attachment",
     Id = 3,
-    Name = "Attachment",
+    Name = "CustomAttachment",
     Props = {
-    RelCF = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+    RelCF = CFrame.new(0, -0.35427, 0.15926, 1, 0, 0, 0, 0.64276, 0.76606, 0, -0.76607, 0.64276),
 },
 },
     {
@@ -11318,9 +11318,9 @@ return {
                 {
                     Class = "Attachment",
                     Id = 4,
-                    Name = "Attachment",
+                    Name = "CustomAttachment",
                     Props = {
-                        RelCF = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+                        RelCF = CFrame.new(0, -0.24658, 0.11084, 1, 0, 0, 0, 0.64276, 0.76606, 0, -0.76607, 0.64276),
                     },
                 },
             },
