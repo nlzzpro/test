@@ -3,7 +3,7 @@
 return {
     Metadata = {
         Source = "Supreme Values (live fetch with bypass)",
-        UpdatedAt = "2026-09-05T04:27:03Z",
+        UpdatedAt = "2026-09-05T20:57:04Z",
         SchemaVersion = 2,
     },
 
