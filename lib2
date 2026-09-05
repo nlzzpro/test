@@ -4376,11 +4376,6 @@ function Nely:CreateWindow(opts)
             dot.MouseEnter:Connect(function() TintIcon(glyph, theme.Accent) end)
             dot.MouseLeave:Connect(function() TintIcon(glyph, theme.TextDim) end)
             AttachTooltip(dot, text)
-            -- The tooltip text otherwise only ever exists inside the
-            -- MouseEnter closure above -- stored here too, as a plain
-            -- attribute, so the search index can match a control by its
-            -- description without needing to simulate a hover.
-            dot:SetAttribute("NelyInfoText", text)
             return dot
         end
 
@@ -5214,12 +5209,6 @@ function Nely:CreateWindow(opts)
                 ZIndex                 = 17,
                 Parent                 = page,
             })
-            -- Tagged (not just a plain Frame) so the search index below can
-            -- tell "this row is a section heading" from "this row is a real
-            -- control", and can track which section a control sits under by
-            -- remembering the most recent one seen while walking the page
-            -- in LayoutOrder.
-            holder:SetAttribute("NelySection", true)
             local label = New("TextLabel", {
                 Size                   = UDim2.new(1, 0, 1, 0),
                 Position               = UDim2.fromOffset(2, 10),
@@ -8360,256 +8349,52 @@ function Nely:CreateWindow(opts)
 
         LayoutTabList()
 
-        ------------------------------------------------------------
-        -- Live cross-tab search
-        --
-        -- The old version of this box only filtered rows WITHIN whichever
-        -- tab happened to already be open -- useless for finding a control
-        -- that lives on a different tab, which is the entire point of a
-        -- search bar. This walks every tab's page (same index the command
-        -- palette below builds, kept independent on purpose: this box has
-        -- no popup/keybind lifecycle to coordinate with, so a second small
-        -- index is simpler and safer than threading shared state through
-        -- both) and shows live, ranked, jump-to results in a dropdown under
-        -- the box -- never a duplicate control, never a second copy of a
-        -- callback. Picking a result switches to its tab, scrolls the real
-        -- row into view and pulses it -- the exact same instance the tab
-        -- would show you if you clicked there yourself, so toggling it from
-        -- here and toggling the original are the same action by
-        -- construction, not two things kept in sync.
-        ------------------------------------------------------------
-
-        local function EntryText(row)
-            -- The first non-empty TextLabel is the control's own name;
-            -- everything else it carries (a value readout, a unit) is kept
-            -- as a separate "extra" field, plus the description stashed on
-            -- the info dot, if any -- see AttachTooltip's NelyInfoText
-            -- attribute. Kept apart from Name (rather than one blob) so
-            -- matching can weight "found in the name" far above "found
-            -- somewhere in a value readout".
-            local name, extra = nil, {}
+        local function RowText(row)
+            local parts = {}
             for _, child in ipairs(row:GetDescendants()) do
                 if child:IsA("TextLabel") and child.Text ~= "" then
-                    if not name then name = child.Text else table.insert(extra, child.Text) end
-                elseif child.Name == "Info" then
-                    local info = child:GetAttribute("NelyInfoText")
-                    if info then table.insert(extra, info) end
+                    table.insert(parts, child.Text)
                 end
             end
-            return name, table.concat(extra, " ")
+            return string.lower(table.concat(parts, " "))
         end
 
-        local searchEntries = {}
-
-        local function BuildSearchIndex()
-            searchEntries = {}
-            for _, tab in ipairs(Window.Tabs) do
-                local section = nil
-                local function Walk(host)
-                    for _, child in ipairs(host:GetChildren()) do
-                        if child:IsA("GuiObject") then
-                            if child:GetAttribute("NelySection") then
-                                local lbl = child:FindFirstChildWhichIsA("TextLabel")
-                                section = lbl and lbl.Text or section
-                            elseif child:GetAttribute("NelySticky") then
-                                -- A group/column header -- treat its own
-                                -- title as the section for whatever is
-                                -- inside it, same idea as a plain section.
-                                local lbl = child:FindFirstChildWhichIsA("TextLabel")
-                                if lbl and lbl.Text ~= "" then section = lbl.Text end
-                            elseif child:GetAttribute("NelyContainer") then
-                                local saved = section
-                                Walk(child)
-                                section = saved
-                            else
-                                local name, extra = EntryText(child)
-                                if name and #name > 0 then
-                                    table.insert(searchEntries, {
-                                        Name = name, Row = child, Tab = tab, Section = section,
-                                        NameLower    = string.lower(name),
-                                        ExtraLower   = string.lower(extra),
-                                        SectionLower = section and string.lower(section) or "",
-                                        TabLower     = string.lower(tab.Name),
-                                    })
-                                end
-                            end
-                        end
+        -- Groups and columns nest their rows, so a flat pass over the page's
+        -- direct children would only ever match the container. Filter walks
+        -- into anything tagged as a container and reports back whether it
+        -- kept anything, so an empty group hides itself instead of leaving a
+        -- titled card with nothing under it.
+        local function Filter(host, query)
+            local kept = false
+            for _, child in ipairs(host:GetChildren()) do
+                if child:IsA("GuiObject") then
+                    if child:GetAttribute("NelySticky") then
+                        -- A group's own header. It rides along with whatever
+                        -- survives inside the group and never counts as a
+                        -- match itself, otherwise typing a group's title
+                        -- would leave a titled card with nothing under it.
+                        child.Visible = true
+                    elseif child:GetAttribute("NelyContainer") then
+                        local inner = Filter(child, query)
+                        child.Visible = inner
+                        kept = kept or inner
+                    else
+                        local match = query == ""
+                            or string.find(RowText(child), query, 1, true) ~= nil
+                        child.Visible = match
+                        kept = kept or match
                     end
                 end
-                Walk(tab.Page)
             end
-        end
-
-        -- Whitespace-tolerant, multi-word, per-field substring matching --
-        -- deliberately NOT a scattered subsequence match over one giant
-        -- blob: that scores by "do these letters appear in order
-        -- SOMEWHERE", which false-positives constantly once the haystack
-        -- gets long (searching "bullet" matched "Button design" purely
-        -- because b-u-...-l-...-l-...-e-...-t happened to appear in order
-        -- across its combined name+section+tab text, live-confirmed while
-        -- testing this). Requiring each query WORD to appear as a real
-        -- substring in at least one field keeps "reasonably fuzzy"
-        -- (partial words, any word order, matches split across
-        -- name/description/section/tab) without matching unrelated
-        -- controls by coincidence. Returns nil when any word matches
-        -- nowhere, otherwise higher is better.
-        local function ScoreEntry(entry, query)
-            if query == "" then return 0 end
-            local score = 0
-            for word in string.gmatch(query, "%S+") do
-                local hit =
-                    string.find(entry.NameLower, word, 1, true) and 1
-                    or string.find(entry.SectionLower, word, 1, true) and 2
-                    or string.find(entry.ExtraLower, word, 1, true) and 3
-                    or string.find(entry.TabLower, word, 1, true) and 4
-                if not hit then return nil end
-                score = score + ({ [1] = 100, [2] = 40, [3] = 20, [4] = 5 })[hit]
-                if hit == 1 and entry.NameLower == word then score = score + 60
-                elseif hit == 1 and string.sub(entry.NameLower, 1, #word) == word then score = score + 25 end
-            end
-            -- Among equally-good matches, the more specific (shorter) name
-            -- wins -- "Tracer" beats "Tracer color multiplier preview".
-            return score - (#entry.NameLower * 0.1)
-        end
-
-        local resultsBox = New("Frame", {
-            Name                   = "SearchResults",
-            Size                   = UDim2.fromOffset(300, 0),
-            AutomaticSize          = Enum.AutomaticSize.Y,
-            BackgroundColor3       = theme.Surface,
-            BorderSizePixel        = 0,
-            Visible                = false,
-            ZIndex                 = 850,
-            Parent                 = Root,
-        }, {
-            Corner(10), Stroke(theme.BorderSoft, 1, 0.35), Pad(6, 6, 6, 6),
-            New("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder }),
-        })
-        Shadow(resultsBox, 20, 0.7)
-
-        local function RepositionResults()
-            local pos = wrap.AbsolutePosition
-            local size = wrap.AbsoluteSize
-            local screen = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
-                or Vector2.new(1280, 720)
-            local x = math.clamp(pos.X, 4, math.max(4, screen.X - 304))
-            local y = pos.Y + size.Y + 6
-            -- Flip above the box instead of running off the bottom of the
-            -- screen -- the same "reposition if it would be clipped" rule
-            -- every popup in this library follows.
-            if y + resultsBox.AbsoluteSize.Y > screen.Y - 8 and pos.Y - resultsBox.AbsoluteSize.Y - 6 > 0 then
-                y = pos.Y - resultsBox.AbsoluteSize.Y - 6
-            end
-            resultsBox.Position = UDim2.fromOffset(x, y)
-        end
-
-        local function PulseRow(row)
-            local stroke = row:FindFirstChildOfClass("UIStroke")
-            if stroke then
-                local c, t = stroke.Color, stroke.Transparency
-                stroke.Color, stroke.Transparency = theme.Accent, 0
-                task.delay(0.12, function()
-                    if stroke.Parent then Tween(stroke, { Color = c, Transparency = t }, EASE.Glide) end
-                end)
-                return
-            end
-            local was = row.BackgroundTransparency
-            if was >= 1 then return end
-            row.BackgroundTransparency = math.max(0, was - 0.35)
-            Tween(row, { BackgroundTransparency = was }, EASE.Glide)
-        end
-
-        local function JumpToEntry(entry)
-            resultsBox.Visible = false
-            sBox.Text = ""
-            if Window.ActiveTab ~= entry.Tab then entry.Tab.Activate() end
-            task.defer(function()
-                local page = entry.Tab.Page
-                if not (page and entry.Row.Parent) then return end
-                local offset = entry.Row.AbsolutePosition.Y - page.AbsolutePosition.Y + page.CanvasPosition.Y
-                Tween(page, { CanvasPosition = Vector2.new(0, math.max(0, offset - 60)) }, EASE.Glide)
-                PulseRow(entry.Row)
-            end)
-        end
-
-        local function RenderResults(query)
-            for _, child in ipairs(resultsBox:GetChildren()) do
-                if child:IsA("GuiObject") then child:Destroy() end
-            end
-            if query == "" then
-                resultsBox.Visible = false
-                return
-            end
-
-            local scored = {}
-            for _, entry in ipairs(searchEntries) do
-                local s = ScoreEntry(entry, query)
-                if s then table.insert(scored, { entry = entry, score = s }) end
-            end
-            table.sort(scored, function(a, b) return a.score > b.score end)
-
-            if #scored == 0 then
-                New("TextLabel", {
-                    Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1,
-                    Text = "No matches", TextColor3 = theme.TextDim, TextSize = 12,
-                    Font = Enum.Font.Gotham, ZIndex = 852, Parent = resultsBox,
-                })
-                resultsBox.Visible = true
-                RepositionResults()
-                return
-            end
-
-            for i = 1, math.min(#scored, 8) do
-                local entry = scored[i].entry
-                local row = New("TextButton", {
-                    Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = theme.Elevated,
-                    BackgroundTransparency = 1, AutoButtonColor = false, Text = "",
-                    LayoutOrder = i, ZIndex = 851, Parent = resultsBox,
-                }, { Corner(7) })
-
-                New("TextLabel", {
-                    Size = UDim2.new(1, -12, 0, 16), Position = UDim2.fromOffset(10, 4),
-                    BackgroundTransparency = 1, Text = entry.Name, TextColor3 = theme.Text,
-                    TextSize = 12, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left,
-                    TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 852, Parent = row,
-                })
-                -- Subtle path, as asked for: "Tab > Section" (or just "Tab"
-                -- when the control is not inside a named section).
-                local path = entry.Section and (entry.Tab.Name .. " > " .. entry.Section) or entry.Tab.Name
-                New("TextLabel", {
-                    Size = UDim2.new(1, -12, 0, 14), Position = UDim2.fromOffset(10, 20),
-                    BackgroundTransparency = 1, Text = path, TextColor3 = theme.TextDim,
-                    TextSize = 10, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
-                    TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 852, Parent = row,
-                })
-
-                row.MouseEnter:Connect(function() Tween(row, { BackgroundTransparency = 0.3 }, EASE.Snap) end)
-                row.MouseLeave:Connect(function() Tween(row, { BackgroundTransparency = 1 }, EASE.Snap) end)
-                row.MouseButton1Click:Connect(function() JumpToEntry(entry) end)
-            end
-
-            resultsBox.Visible = true
-            RepositionResults()
+            if query == "" then return true end
+            return kept
         end
 
         sBox:GetPropertyChangedSignal("Text"):Connect(function()
-            -- Rebuilding the index on every keystroke would be wasted work
-            -- once a search is already open (rows do not appear/disappear
-            -- mid-keystroke), but a STALE index across window sessions
-            -- could point at destroyed instances, so it is rebuilt the
-            -- moment a search starts (empty -> non-empty) and left alone
-            -- for the rest of that search, exactly like the command
-            -- palette's own "build once per open" rule.
             local query = string.lower(sBox.Text)
-            if query ~= "" and #searchEntries == 0 then BuildSearchIndex() end
-            RenderResults(query)
-        end)
-        sBox.FocusLost:Connect(function()
-            -- Losing focus without pressing away-from-results (e.g. Tab
-            -- key) should not leave a stale dropdown floating over the UI.
-            task.delay(0.15, function()
-                if not sBox:IsFocused() then resultsBox.Visible = false end
-            end)
+            for _, tab in ipairs(Window.Tabs) do
+                Filter(tab.Page, query)
+            end
         end)
 
         local sStroke = wrap:FindFirstChildOfClass("UIStroke")
