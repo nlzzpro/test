@@ -1,14 +1,3 @@
---[[
-    MM2 SKIN DATABASE  (pure data)
-
-    Every entry has a real .Model tree (Ancient/Godly/Unique + their
-    Chromas) -- scraped mesh/texture/attachment data only. No runtime
-    code lives here: NelyMM2.lua owns the engine that turns this into
-    spawned overlays, held/holster positioning, Chroma, icon sync, etc.
-    Loading this file must never require more than `return`ing a plain
-    table -- see NelyMM2.lua's BuildSkinEngine.
-]]
-
 return {
     ["Beachy"] = {
         Complete = true,
@@ -25,12 +14,16 @@ return {
         Model = {
     Children = {
     {
-    Class = "SurfaceAppearance",
+    Class = "SpecialMesh",
     Id = 2,
-    Name = "SurfaceAppearance",
+    Name = "Mesh",
     Props = {
-    AlphaMode = Enum.AlphaMode.Overlay,
-    ColorMap = "rbxassetid://128146857850145",
+    MeshId = "rbxassetid://88652423673547",
+    MeshType = Enum.MeshType.FileMesh,
+    Offset = Vector3.new(0, 0, 0),
+    Scale = Vector3.new(0.06992, 0.06992, 0.06992),
+    TextureId = "rbxassetid://128146857850145",
+    VertexColor = Vector3.new(1, 1, 1),
 },
 },
     {
@@ -48,24 +41,18 @@ return {
     Props = {},
 },
 },
-    Class = "MeshPart",
+    Class = "Part",
     Id = 1,
     Name = "KnifeDisplay",
     Props = {
     CanCollide = false,
     CastShadow = true,
     Color = Color3.fromRGB(163, 162, 165),
-    DoubleSided = false,
     Material = Enum.Material.Plastic,
-    MeshId = "rbxassetid://88652423673547",
     Reflectance = 0,
     RelCF = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
-    Size = Vector3.new(0.36936, 3.50476, 1.25938),
-    -- The real Beachy is textured by a SurfaceAppearance, whose ColorMap an
-    -- executor thread cannot write ("lacking capability Plugin"). MeshPart
-    -- TextureID is writable and takes the same albedo, so the skin renders
-    -- textured here instead of flat grey.
-    TextureID = "rbxassetid://128146857850145",
+    Shape = Enum.PartType.Block,
+    Size = Vector3.new(0.71876, 2.04139, 3.09548),
     Transparency = 0,
 },
 },
@@ -833,18 +820,7 @@ return {
     Class = "SurfaceAppearance",
     Id = 2,
     Name = "SurfaceAppearance",
-    -- The original scrape captured this node with no properties at all,
-    -- which the builder now (correctly) treats as "nothing to paint
-    -- with" and skips creating -- but that only fell back to the
-    -- MeshPart's own TextureID, which is NOT what the real game shows:
-    -- a SurfaceAppearance on a MeshPart fully overrides TextureID for
-    -- rendering. Read directly off a real, untouched, currently-held
-    -- Constellation (ItemID attribute confirmed it, and MeshId/TextureID
-    -- both matched this entry's own scraped values exactly, so the
-    -- geometry here is current) since without Nely it renders correctly
-    -- and with Nely it did not -- exactly the missing-data signature.
-    -- NormalMap was genuinely empty on the real one too, so it stays
-    -- absent here rather than being invented as "".
+
     Props = {
     AlphaMode = Enum.AlphaMode.Overlay,
     ColorMap = "rbxassetid://123603327635244",
@@ -11301,12 +11277,16 @@ return {
         {
             Children = {
                 {
-                    Class = "SurfaceAppearance",
+                    Class = "SpecialMesh",
                     Id = 2,
-                    Name = "SurfaceAppearance",
+                    Name = "Mesh",
                     Props = {
-                        AlphaMode = Enum.AlphaMode.Overlay,
-                        ColorMap = "rbxassetid://133533169721039",
+                        MeshId = "rbxassetid://82044527712515",
+                        MeshType = Enum.MeshType.FileMesh,
+                        Offset = Vector3.new(0, 0, 0),
+                        Scale = Vector3.new(0.69601, 0.69601, 0.69601),
+                        TextureId = "rbxassetid://133533169721039",
+                        VertexColor = Vector3.new(1, 1, 1),
                     },
                 },
                 {
@@ -11324,20 +11304,18 @@ return {
                     },
                 },
             },
-            Class = "MeshPart",
+            Class = "Part",
             Id = 1,
             Name = "KnifeDisplay",
             Props = {
                 CanCollide = false,
                 CastShadow = true,
                 Color = Color3.fromRGB(163, 162, 165),
-                DoubleSided = false,
                 Material = Enum.Material.Plastic,
-                MeshId = "rbxassetid://82044527712515",
                 Reflectance = 0,
                 RelCF = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
-                Size = Vector3.new(0.80223, 3.37661, 0.97476),
-                TextureID = "rbxassetid://133533169721039",
+                Shape = Enum.PartType.Block,
+                Size = Vector3.new(0.50027, 1.42083, 2.1545),
                 Transparency = 0,
             },
         },
